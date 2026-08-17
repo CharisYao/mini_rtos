@@ -1,0 +1,11 @@
+/build/
+/build-*/
+*.exe
+*.obj
+*.o
+*.a
+*.dll
+*.pdb
+*.ilk
+*.log
+.vscode/
