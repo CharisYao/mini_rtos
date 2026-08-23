@@ -15,7 +15,10 @@
  * 承载和暂停恢复由 port 层根据调度结果执行。
  */
 
-#include "os_internal.h"
+#include "os_sched.h"
+#include "os_list.h"
+#include "os_time.h"
+#include "os_mutex_internal.h"
 
 #include <stddef.h>
 

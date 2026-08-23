@@ -15,7 +15,9 @@
  * 必须保证该缓冲区在 API 返回前始终有效。
  */
 
-#include "os_internal.h"
+#include "os_queue_internal.h"
+#include "os_list.h"
+#include "os_sched.h"
 
 #include <stdint.h>
 #include <string.h>

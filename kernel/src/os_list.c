@@ -13,7 +13,7 @@
  * 被破坏后测试或不变量检查陷入无限循环。
  */
 
-#include "os_internal.h"
+#include "os_list.h"
 
 #include <assert.h>
 

@@ -80,9 +80,9 @@ SensorTask(P2) -> 6格消息队列 -> ProcessTask(P1)
 
 1. `include/os.h`：先看任务能调用哪些 API。
 2. `demos/preemption_demo.c`：看不主动让出的任务行为。
-3. `kernel/os_sched.c` 和 `kernel/os_time.c`：看优先级选择、时间片和唤醒。
+3. `kernel/src/os_sched.c` 和 `kernel/src/os_time.c`：看优先级选择、时间片和唤醒。
 4. `port/win32/os_port_win32.c`：看 Windows 如何提供真正的异步打断。
-5. `kernel/os_sem.c`、`os_queue.c`、`os_mutex.c`：看阻塞、唤醒和优先级继承。
+5. `kernel/src/os_sem.c`、`kernel/src/os_queue.c`、`kernel/src/os_mutex.c`：看阻塞、唤醒和优先级继承。
 6. `tests/test_kernel.c`：用测试场景核对每条调度规则。
 
 更完整的架构、状态迁移、模块职责和验收标准见 `docs/design.md`。

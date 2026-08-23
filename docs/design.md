@@ -115,13 +115,23 @@ mini_rtos/
 ├── include/
 │   └── os.h
 ├── kernel/
-│   ├── os_task.c
-│   ├── os_sched.c
-│   ├── os_list.c
-│   ├── os_time.c
-│   ├── os_sem.c
-│   ├── os_queue.c
-│   └── os_mutex.c
+│   ├── include/
+│   │   ├── os_list.h
+│   │   ├── os_task_internal.h
+│   │   ├── os_kernel_state.h
+│   │   ├── os_sched.h
+│   │   ├── os_time.h
+│   │   ├── os_sem_internal.h
+│   │   ├── os_queue_internal.h
+│   │   └── os_mutex_internal.h
+│   └── src/
+│       ├── os_task.c
+│       ├── os_sched.c
+│       ├── os_list.c
+│       ├── os_time.c
+│       ├── os_sem.c
+│       ├── os_queue.c
+│       └── os_mutex.c
 ├── port/
 │   └── win32/
 │       └── os_port_win32.c
@@ -138,7 +148,8 @@ mini_rtos/
 
 #### include/os.h
 
-唯一的公开 API 头文件，声明：
+唯一公共 API 入口，直接声明应用可使用的配置、公共枚举、不透明句柄和全部公开
+服务接口：
 
 - 内核初始化与启动。
 - 任务创建、让出、延时和退出。
@@ -148,9 +159,17 @@ mini_rtos/
 - 互斥量 API。
 - 只读任务状态和调度轨迹接口。
 
-os.h 不暴露 Win32 线程句柄，也不让应用直接修改 TCB。
+当前项目规模下没有再拆分出多个 public `api.h`；应用只需包含 `os.h`。
+`os.h` 不暴露 Win32 线程句柄，也不让应用直接修改 TCB。
 
-#### kernel/os_task.c
+#### kernel/include/*.h
+
+内核头文件按职责拆分：`os_list.h` 拥有链表类型，`os_task_internal.h` 拥有 TCB，
+`os_sem_internal.h`、`os_queue_internal.h` 和 `os_mutex_internal.h` 分别拥有对应
+内核对象控制块；`os_kernel_state.h` 只组合全局内核状态。Win32 port 和白盒测试
+显式包含所需模块头，不再依赖一个汇总全部内部类型的总头文件。
+
+#### kernel/src/os_task.c
 
 - TCB 管理。
 - 任务创建参数检查。
@@ -158,7 +177,7 @@ os.h 不暴露 Win32 线程句柄，也不让应用直接修改 TCB。
 - 当前任务信息。
 - 任务入口和任务返回处理。
 
-#### kernel/os_sched.c
+#### kernel/src/os_sched.c
 
 - 选择最高优先级 READY 任务。
 - 同优先级时间片轮转。
@@ -166,7 +185,7 @@ os.h 不暴露 Win32 线程句柄，也不让应用直接修改 TCB。
 - 记录任务切换原因。
 - 检查调度不变量。
 
-#### kernel/os_list.c
+#### kernel/src/os_list.c
 
 - 就绪队列。
 - 延时队列。
@@ -175,7 +194,7 @@ os.h 不暴露 Win32 线程句柄，也不让应用直接修改 TCB。
 
 第一版任务数量很少，优先选择容易检查和讲解的数据结构，不为了理论复杂度过早引入复杂容器。
 
-#### kernel/os_time.c
+#### kernel/src/os_time.c
 
 - 系统 tick。
 - 任务延时。
@@ -183,21 +202,21 @@ os.h 不暴露 Win32 线程句柄，也不让应用直接修改 TCB。
 - tick 回绕安全比较。
 - 时间片计数。
 
-#### kernel/os_sem.c
+#### kernel/src/os_sem.c
 
 - 二值信号量。
 - 计数信号量。
 - 获取、释放、阻塞和超时。
 - 按调度规则唤醒等待任务。
 
-#### kernel/os_queue.c
+#### kernel/src/os_queue.c
 
 - 固定容量环形消息缓冲区。
 - 发送等待队列。
 - 接收等待队列。
 - 队列满、队列空和超时语义。
 
-#### kernel/os_mutex.c
+#### kernel/src/os_mutex.c
 
 - 互斥量所有者。
 - 非所有者释放检查。

@@ -7,20 +7,20 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(mini_rtos_core STATIC
-    kernel/os_list.c
-    kernel/os_task.c
-    kernel/os_sched.c
-    kernel/os_time.c
-    kernel/os_sem.c
-    kernel/os_queue.c
-    kernel/os_mutex.c
+    kernel/src/os_list.c
+    kernel/src/os_task.c
+    kernel/src/os_sched.c
+    kernel/src/os_time.c
+    kernel/src/os_sem.c
+    kernel/src/os_queue.c
+    kernel/src/os_mutex.c
 )
 
 target_include_directories(mini_rtos_core
     PUBLIC
         include
     PRIVATE
-        kernel
+        kernel/include
 )
 
 if(MSVC)
@@ -36,7 +36,7 @@ add_executable(test_kernel
 )
 
 target_include_directories(test_kernel PRIVATE
-    kernel
+    kernel/include
 )
 
 target_link_libraries(test_kernel PRIVATE mini_rtos_core)
@@ -58,7 +58,7 @@ if(WIN32)
         PUBLIC
             include
         PRIVATE
-            kernel
+            kernel/include
     )
 
     target_link_libraries(mini_rtos_win32 PUBLIC mini_rtos_core)

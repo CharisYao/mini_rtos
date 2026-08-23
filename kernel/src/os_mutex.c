@@ -14,7 +14,9 @@
  * 都会重新计算优先级；释放时所有权直接移交给最高优先级且最早等待的任务。
  */
 
-#include "os_internal.h"
+#include "os_mutex_internal.h"
+#include "os_list.h"
+#include "os_sched.h"
 
 #include <stddef.h>
 #include <string.h>

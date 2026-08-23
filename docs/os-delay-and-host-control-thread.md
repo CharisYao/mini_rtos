@@ -4,7 +4,7 @@
 
 本文结合当前 Windows 版 miniRTOS 的实际代码，回答下面三个问题：
 
-1. 任务调用 `os_Delay()` 后，请求怎样从任务线程进入 `kernel/os_time.c`？
+1. 任务调用 `os_Delay()` 后，请求怎样从任务线程进入 `kernel/src/os_time.c`？
 2. 宿主控制线程到底是什么，它和 Windows、miniRTOS 调度器是什么关系？
 3. `os_Start()` 是否等于启动 RTOS 调度器？
 
@@ -17,7 +17,7 @@
 `os_Delay()` 分为两层：
 
 - `port/win32/os_port_win32.c` 中的 `os_Delay()` 是任务可以调用的公开接口。它负责把延时请求安全地交给宿主控制线程。
-- `kernel/os_time.c` 中的 `os_TimeDelayCurrent()` 是平台无关的延时内核实现。它负责修改 TCB、加入延时队列并触发调度。
+- `kernel/src/os_time.c` 中的 `os_TimeDelayCurrent()` 是平台无关的延时内核实现。它负责修改 TCB、加入延时队列并触发调度。
 
 因此，Win32 port 负责“把请求送进去”，`time.c` 负责“真正执行延时状态迁移”。
 
@@ -80,7 +80,7 @@ EmergencyTask TCB <-> Windows 工作线程 C
 
 Windows 工作线程提供真实的独立栈、程序执行位置和寄存器现场。miniRTOS TCB 保存任务状态、优先级、延时信息和等待关系。
 
-工作线程不是调度决策者。哪个任务应该运行，仍由 `kernel/os_sched.c` 根据 TCB 和就绪队列决定。
+工作线程不是调度决策者。哪个任务应该运行，仍由 `kernel/src/os_sched.c` 根据 TCB 和就绪队列决定。
 
 ### 3.3 整体关系
 
@@ -155,7 +155,7 @@ miniRTOS 并没有替换 Windows 调度器。它采用下面的方式约束 Wind
 os_SchedStart();
 ~~~
 
-`os_SchedStart()` 位于 `kernel/os_sched.c`，它从最高优先级非空 ready 队列取出第一个任务，并把该任务设为 `RUNNING`。
+`os_SchedStart()` 位于 `kernel/src/os_sched.c`，它从最高优先级非空 ready 队列取出第一个任务，并把该任务设为 `RUNNING`。
 
 ### 5.4 port 放行第一个任务线程
 
@@ -215,9 +215,9 @@ os_Delay(5U);
 | 查找请求者 | [`os_port_win32.c`](../port/win32/os_port_win32.c) | `os_PortFindRequester()` | 455 |
 | 请求分发 | [`os_port_win32.c`](../port/win32/os_port_win32.c) | `os_PortProcessRequest()` | 475 |
 | Win32 运行环境和控制循环 | [`os_port_win32.c`](../port/win32/os_port_win32.c) | `os_Start()` | 767 |
-| 延时状态迁移 | [`os_time.c`](../kernel/os_time.c) | `os_TimeDelayCurrent()` | 38 |
-| tick、超时和到期唤醒 | [`os_time.c`](../kernel/os_time.c) | `os_TimeTick()` | 65 |
-| 阻塞后选择下一任务 | [`os_sched.c`](../kernel/os_sched.c) | `os_SchedCurrentBlocked()` | 222 |
+| 延时状态迁移 | [`os_time.c`](../kernel/src/os_time.c) | `os_TimeDelayCurrent()` | 38 |
+| tick、超时和到期唤醒 | [`os_time.c`](../kernel/src/os_time.c) | `os_TimeTick()` | 65 |
+| 阻塞后选择下一任务 | [`os_sched.c`](../kernel/src/os_sched.c) | `os_SchedCurrentBlocked()` | 222 |
 
 ### 6.2 宿主控制线程的调用栈
 
@@ -348,7 +348,7 @@ case OS_PORT_REQUEST_DELAY:
 
 ### 8.4 `os_TimeDelayCurrent()` 修改 TCB
 
-`kernel/os_time.c` 中的核心状态迁移是：
+`kernel/src/os_time.c` 中的核心状态迁移是：
 
 ~~~c
 current->wake_tick = os_TickGet() + ticks;
@@ -448,7 +448,7 @@ WaitForSingleObject() 返回
 
 ### 11.1 miniRTOS 调度器是一组内核数据和函数
 
-调度器的核心位于 `kernel/os_sched.c`，主要包括：
+调度器的核心位于 `kernel/src/os_sched.c`，主要包括：
 
 - 每个优先级的 ready 队列；
 - ready 位图；
@@ -485,7 +485,7 @@ STM32 上没有 Windows，也没有这个形式的宿主控制线程。相同职
 | 宿主控制线程调用 `os_TimeTick()` | SysTick 处理函数调用内核 tick 逻辑 |
 | `SuspendThread()`、`ResumeThread()`、`gate` | PendSV 保存和恢复 CPU 寄存器及 PSP |
 | Win32 port | Cortex-M port 和少量汇编 |
-| `kernel/os_sched.c` | 仍然是平台无关的调度决策逻辑 |
+| `kernel/src/os_sched.c` | 仍然是平台无关的调度决策逻辑 |
 
 因此，宿主控制线程没有一个完全对应的 STM32“线程”。在 Cortex-M 上，它承担的职责被拆分到：
 
@@ -494,7 +494,7 @@ STM32 上没有 Windows，也没有这个形式的宿主控制线程。相同职
 - PendSV 上下文切换；
 - SVC 或启动首任务代码。
 
-如果把当前通用 kernel 移植到 STM32，`kernel/os_sched.c`、`kernel/os_time.c` 和内核对象的核心逻辑可以继续使用；`port/win32/os_port_win32.c` 则必须替换为 Cortex-M 移植层。
+如果把当前通用 kernel 移植到 STM32，`kernel/src/os_sched.c`、`kernel/src/os_time.c` 和内核对象的核心逻辑可以继续使用；`port/win32/os_port_win32.c` 则必须替换为 Cortex-M 移植层。
 
 ## 13. 常见误解
 
@@ -522,7 +522,7 @@ STM32 上没有 Windows，也没有这个形式的宿主控制线程。相同职
 2. `port/win32/os_port_win32.c` 中的 `os_Start()`：看宿主控制循环。
 3. 同文件中的 `os_Delay()` 和 `os_PortSubmitRequest()`：看任务怎样提交请求并停在 gate。
 4. 同文件中的 `os_PortProcessRequest()`：看请求怎样分发到 kernel。
-5. `kernel/os_time.c` 中的 `os_TimeDelayCurrent()`：看任务怎样进入延时队列。
-6. `kernel/os_sched.c` 中的 `os_SchedCurrentBlocked()`：看下一任务怎样选出。
+5. `kernel/src/os_time.c` 中的 `os_TimeDelayCurrent()`：看任务怎样进入延时队列。
+6. `kernel/src/os_sched.c` 中的 `os_SchedCurrentBlocked()`：看下一任务怎样选出。
 7. 回到 port 的 `os_PortActivate()`：看内核选择怎样落实为 Windows 线程恢复。
-8. `kernel/os_time.c` 中的 `os_TimeTick()`：看延时任务怎样到期并重新变为 READY。
+8. `kernel/src/os_time.c` 中的 `os_TimeTick()`：看延时任务怎样到期并重新变为 READY。

@@ -14,7 +14,13 @@
  * 有效优先级以及状态文本等只读查询功能。
  */
 
-#include "os_internal.h"
+#include "os_kernel_state.h"
+#include "os_task_internal.h"
+#include "os_list.h"
+#include "os_sched.h"
+#include "os_sem_internal.h"
+#include "os_queue_internal.h"
+#include "os_mutex_internal.h"
 
 #include <string.h>
 

@@ -14,7 +14,10 @@
  * 时间语义，实际周期事件由 Win32 移植层的等待定时器产生。
  */
 
-#include "os_internal.h"
+#include "os_time.h"
+#include "os_list.h"
+#include "os_sched.h"
+#include "os_mutex_internal.h"
 
 #include <stdint.h>
 

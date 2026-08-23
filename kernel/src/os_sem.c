@@ -14,7 +14,9 @@
  * 更高，通用调度器会立即作出抢占决定。
  */
 
-#include "os_internal.h"
+#include "os_sem_internal.h"
+#include "os_list.h"
+#include "os_sched.h"
 
 #include <stddef.h>
 #include <string.h>

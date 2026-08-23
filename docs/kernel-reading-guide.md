@@ -5,7 +5,7 @@
 这份文档只讲平台无关的 miniRTOS 内核，目标是看清下面四件事：
 
 1. 内核用哪些结构体保存任务、队列和调度状态；
-2. 每个 `kernel/*.c` 文件负责什么；
+2. 每个 `kernel/src/*.c` 文件负责什么；
 3. 任务如何在 `READY`、`RUNNING` 和阻塞状态之间迁移；
 4. 调度、延时、信号量、消息队列和互斥量之间怎样互相调用。
 
@@ -13,14 +13,21 @@
 
 ~~~text
 include/os.h
-kernel/os_internal.h
-kernel/os_list.c
-kernel/os_task.c
-kernel/os_sched.c
-kernel/os_time.c
-kernel/os_sem.c
-kernel/os_queue.c
-kernel/os_mutex.c
+kernel/include/os_list.h
+kernel/include/os_task_internal.h
+kernel/include/os_kernel_state.h
+kernel/include/os_sched.h
+kernel/include/os_time.h
+kernel/include/os_sem_internal.h
+kernel/include/os_queue_internal.h
+kernel/include/os_mutex_internal.h
+kernel/src/os_list.c
+kernel/src/os_task.c
+kernel/src/os_sched.c
+kernel/src/os_time.c
+kernel/src/os_sem.c
+kernel/src/os_queue.c
+kernel/src/os_mutex.c
 ~~~
 
 `port/win32/os_port_win32.c` 在本文中只作为内核入口出现。Windows 线程、Event、gate、
@@ -56,13 +63,13 @@ port 层入口
 在 Windows 版本中，port 根据 `g_os_kernel.current` 控制工作线程；如果以后移植到 STM32，
 则由 SysTick、PendSV 和任务栈完成同样的执行工作。TCB、就绪队列和调度规则仍属于 kernel。
 
-## 3. 两个头文件分别解决什么问题
+## 3. 公共头文件和内部模块头分别解决什么问题
 
-### 3.1 `include/os.h`：公开接口
+### 3.1 `include/os.h`：公开总入口
 
 [`include/os.h`](../include/os.h) 是任务和 demo 唯一应该直接包含的内核头文件。
 
-它提供：
+当前项目规模下，应用统一包含这个公共入口即可：
 
 - 编译期容量和时间配置；
 - 对应用隐藏内部字段的不透明对象类型；
@@ -80,18 +87,39 @@ typedef struct os_mutex os_mutex_t;
 
 这表示应用可以保存 `os_task_t *`，但不能直接写 `task->state` 或修改调度链表。
 
-### 3.2 `kernel/os_internal.h`：内核内部定义
+### 3.2 `kernel/include/os_list.h`：链表模块拥有链表类型
 
-[`kernel/os_internal.h`](../kernel/os_internal.h) 展开了所有不透明类型，并声明 kernel
-各文件之间需要互相调用的内部接口。
+[`kernel/include/os_list.h`](../kernel/include/os_list.h) 定义 `os_list_node_t` 和 `os_list_t`，并声明
+链表操作。节点只对 `struct os_task` 做前向声明，不拥有 TCB 的完整定义。
 
-可以包含它的代码是：
+### 3.3 各模块拥有自己的内部控制块
 
-- `kernel/*.c`；
-- Win32 port；
-- `tests/test_kernel.c` 白盒测试。
+完整控制块不再集中放在一个 types 头文件中：
 
-普通任务不应包含它，否则可以绕过调度规则直接破坏 TCB、ready 队列和等待关系。
+| 头文件 | 所属类型和接口 |
+|---|---|
+| `kernel/include/os_task_internal.h` | `struct os_task`、`os_wait_kind_t` |
+| `kernel/include/os_sem_internal.h` | `struct os_sem` 和信号量内核接口 |
+| `kernel/include/os_queue_internal.h` | `struct os_queue` 和队列内核接口 |
+| `kernel/include/os_mutex_internal.h` | `struct os_mutex` 和互斥量内核接口 |
+| `kernel/include/os_sched.h` | ready/等待队列和调度函数 |
+| `kernel/include/os_time.h` | tick、延时和时间片函数 |
+
+`os_task_internal.h`、`os_sem_internal.h` 等模块头可以被相关 kernel 模块包含，
+因此模块间仍然能够协作，但每个控制块的定义有明确归属。
+
+### 3.4 `kernel/include/os_kernel_state.h`：全局状态组合层
+
+[`kernel/include/os_kernel_state.h`](../kernel/include/os_kernel_state.h) 只组合 TCB 池、ready/delayed
+链表、tick 和调度轨迹，定义 `os_kernel_t` 与 `g_os_kernel`。它不重新定义信号量、
+队列或互斥量控制块。
+
+### 3.5 port 和白盒测试的内部依赖
+
+Win32 port 和 `tests/test_kernel.c` 不再包含一个汇总所有内部类型的总头文件，而是
+显式包含所需模块头。这样可以直接看到它们依赖任务、调度、时间和各内核对象模块，
+也避免项目保留一个“所有内部结构总入口”。普通任务仍不应包含这些 `kernel/*_internal.h`
+文件，否则可以绕过调度规则直接破坏 TCB、ready 队列和等待关系。
 
 ## 4. `os.h` 中的核心配置
 
@@ -343,11 +371,11 @@ os_kernel_t g_os_kernel;
 | `last_reason` | 最近一次切换原因 |
 | `switch_count` | 真实任务切换累计次数 |
 
-## 7. `kernel/os_list.c`：所有调度队列的基础
+## 7. `kernel/src/os_list.c`：所有调度队列的基础
 
 ### 7.1 文件职责
 
-[`kernel/os_list.c`](../kernel/os_list.c) 只实现链表结构，不理解优先级、任务状态、信号量
+[`kernel/src/os_list.c`](../kernel/src/os_list.c) 只实现链表结构，不理解优先级、任务状态、信号量
 或消息内容。上层调度代码决定“为什么插入”，链表只完成“怎样连接节点”。
 
 ### 7.2 关键函数
@@ -377,11 +405,11 @@ os_mutex.c  -> 初始化互斥量等待队列
 `os_ListPushBack()` 与 `os_ListPopFront()`组合出 FIFO。`os_WaitInsertByPriority()`则使用
 `os_ListInsertBefore()`把高优先级等待者插到前面，同优先级仍追加在已有同级任务之后。
 
-## 8. `kernel/os_task.c`：初始化和创建 TCB
+## 8. `kernel/src/os_task.c`：初始化和创建 TCB
 
 ### 8.1 文件职责
 
-[`kernel/os_task.c`](../kernel/os_task.c) 定义 `g_os_kernel`，负责把一块全零静态内存
+[`kernel/src/os_task.c`](../kernel/src/os_task.c) 定义 `g_os_kernel`，负责把一块全零静态内存
 初始化成合法内核，并在启动前从固定 TCB 数组创建任务。
 
 ### 8.2 `os_Init()` 调用链
@@ -422,11 +450,11 @@ os_TaskCreate(...)
 `os_TaskGetName()`、`os_TaskGetState()`、`os_TaskGetPriority()`只读取 TCB。
 `os_TaskStateName()`和 `os_SwitchReasonName()`把枚举转换为控制台文本，不参与调度。
 
-## 9. `kernel/os_sched.c`：内核调度中心
+## 9. `kernel/src/os_sched.c`：内核调度中心
 
 ### 9.1 文件职责
 
-[`kernel/os_sched.c`](../kernel/os_sched.c) 是最核心的文件，负责：
+[`kernel/src/os_sched.c`](../kernel/src/os_sched.c) 是最核心的文件，负责：
 
 - 每个优先级的 ready 队列；
 - 最高优先级任务选择；
@@ -565,11 +593,11 @@ os_WaitMaybePreempt(task)
 
 这个函数主要服务于测试和 Win32 port 的防御性检查，不会自动修复错误状态。
 
-## 10. `kernel/os_time.c`：tick、延时和时间片
+## 10. `kernel/src/os_time.c`：tick、延时和时间片
 
 ### 10.1 文件职责
 
-[`kernel/os_time.c`](../kernel/os_time.c) 负责所有与时间相关的内核状态变化：
+[`kernel/src/os_time.c`](../kernel/src/os_time.c) 负责所有与时间相关的内核状态变化：
 
 - 当前系统 tick；
 - `os_Delay()` 对应的延时阻塞；
@@ -635,11 +663,11 @@ os_TimeDelayCurrent(ticks)
 - 对象超时没有单独超时链表，每个 tick 扫描固定 TCB 池；
 - 任务最多 8 个，因此这种 O(n) 教学实现简单且可控。
 
-## 11. `kernel/os_sem.c`：计数信号量
+## 11. `kernel/src/os_sem.c`：计数信号量
 
 ### 11.1 文件职责
 
-[`kernel/os_sem.c`](../kernel/os_sem.c) 从固定对象池分配信号量，并实现计数获取、阻塞、
+[`kernel/src/os_sem.c`](../kernel/src/os_sem.c) 从固定对象池分配信号量，并实现计数获取、阻塞、
 直接唤醒和最大计数限制。
 
 ### 11.2 初始化调用链
@@ -688,11 +716,11 @@ os_SemGiveCurrent()
 
 “直接交付”避免先 `count++` 再让另一个任务竞争，保证已经等待的高优先级任务优先获得资源。
 
-## 12. `kernel/os_queue.c`：固定容量消息队列
+## 12. `kernel/src/os_queue.c`：固定容量消息队列
 
 ### 12.1 文件职责
 
-[`kernel/os_queue.c`](../kernel/os_queue.c) 管理静态队列控制块和调用者提供的环形缓冲区，
+[`kernel/src/os_queue.c`](../kernel/src/os_queue.c) 管理静态队列控制块和调用者提供的环形缓冲区，
 实现立即收发、满/空阻塞、直接消息交付和快照查询。
 
 ### 12.2 初始化
@@ -776,11 +804,11 @@ wait_buffer 保存 out_item 地址
 `os_QueueGetCount()`和 `os_QueueGetCapacity()`读取队列状态；`os_QueueSnapshot()`按逻辑
 出队顺序复制消息，但不修改 `head`、`tail` 或 `count`，主要供控制台观察和测试使用。
 
-## 13. `kernel/os_mutex.c`：所有权与优先级继承
+## 13. `kernel/src/os_mutex.c`：所有权与优先级继承
 
 ### 13.1 文件职责
 
-[`kernel/os_mutex.c`](../kernel/os_mutex.c) 实现非递归互斥量、所有者检查、等待者移交、
+[`kernel/src/os_mutex.c`](../kernel/src/os_mutex.c) 实现非递归互斥量、所有者检查、等待者移交、
 任务退出清理以及链式优先级继承。
 
 ### 13.2 加锁路径
@@ -971,7 +999,7 @@ Low 恢复 P1，High READY 并抢占
 ### 第一遍：只看数据，不追调用
 
 1. `include/os.h` 中四个配置组和三个公共枚举；
-2. `os_internal.h` 中 `os_task` 和 `os_kernel_t`；
+2. `os_task_internal.h` 中的 `os_task`，再对照 `os_kernel_state.h` 中的 `os_kernel_t`；
 3. 对照任务状态迁移图理解一个任务可能位于哪里。
 
 ### 第二遍：只看最小调度主线
@@ -1051,8 +1079,8 @@ kernel 所谓阻塞，是 TCB 改成阻塞状态并离开 ready 队列。Windows
 
 ## 18. 如何使用测试辅助阅读
 
-[`tests/test_kernel.c`](../tests/test_kernel.c) 直接包含 `os_internal.h`，可以绕过 Win32 port
-逐步驱动内核。阅读某个功能时，可以对应查看下面的测试：
+[`tests/test_kernel.c`](../tests/test_kernel.c) 显式包含各个 kernel 内部头，可以绕过
+Win32 port 逐步驱动内核。阅读某个功能时，可以对应查看下面的测试：
 
 | 想验证的机制 | 对应测试方向 |
 |---|---|

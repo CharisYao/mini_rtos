@@ -5,7 +5,7 @@
  * @brief 对调度、时间管理、IPC、互斥量和内核不变量执行白盒与随机测试。
  *
  * @details
- * 本文件直接包含 os_internal.h，在不创建 Windows 工作线程的情况下驱动通用内核，
+ * 本文件显式包含 kernel 内部模块头，在不创建 Windows 工作线程的情况下驱动通用内核，
  * 用于验证链表、最高优先级选择、同优先级轮转、延时与 tick 回绕、任务创建边界、
  * 信号量阻塞唤醒、队列直接交付、互斥量所有权和优先级继承等行为。
  *
@@ -14,7 +14,15 @@
  * 可重复。CHECK 宏在首个失败位置打印条件、文件和行号，便于定位内核错误。
  */
 
-#include "os_internal.h"
+#include "os.h"
+#include "os_list.h"
+#include "os_task_internal.h"
+#include "os_kernel_state.h"
+#include "os_sched.h"
+#include "os_time.h"
+#include "os_sem_internal.h"
+#include "os_queue_internal.h"
+#include "os_mutex_internal.h"
 
 #include <stdio.h>
 #include <string.h>

@@ -21,7 +21,15 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#include "os_internal.h"
+#include "os.h"
+#include "os_list.h"
+#include "os_task_internal.h"
+#include "os_kernel_state.h"
+#include "os_sched.h"
+#include "os_time.h"
+#include "os_sem_internal.h"
+#include "os_queue_internal.h"
+#include "os_mutex_internal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -227,7 +235,7 @@ void os_Delay(uint32_t ticks)
     );
 }
 
-/* 公开信号量获取只是请求外壳，计数和阻塞语义位于 kernel/os_sem.c。 */
+/* 公开信号量获取只是请求外壳，计数和阻塞语义位于 kernel/src/os_sem.c。 */
 os_status_t os_SemTake(os_sem_t *sem, uint32_t timeout_ticks)
 {
     return os_PortSubmitRequest(
