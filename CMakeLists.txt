@@ -14,6 +14,7 @@ add_library(mini_rtos_core STATIC
     kernel/src/os_sem.c
     kernel/src/os_queue.c
     kernel/src/os_mutex.c
+    kernel/src/os_api.c
 )
 
 target_include_directories(mini_rtos_core
@@ -31,6 +32,23 @@ endif()
 
 enable_testing()
 
+add_library(mini_rtos_port_stub STATIC
+    port/stub/os_port_stub.c
+)
+
+target_include_directories(mini_rtos_port_stub
+    PUBLIC
+        include
+    PRIVATE
+        kernel/include
+)
+
+if(MSVC)
+    target_compile_options(mini_rtos_port_stub PRIVATE /W4 /WX)
+else()
+    target_compile_options(mini_rtos_port_stub PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 add_executable(test_kernel
     tests/test_kernel.c
 )
@@ -39,7 +57,7 @@ target_include_directories(test_kernel PRIVATE
     kernel/include
 )
 
-target_link_libraries(test_kernel PRIVATE mini_rtos_core)
+target_link_libraries(test_kernel PRIVATE mini_rtos_core mini_rtos_port_stub)
 
 if(MSVC)
     target_compile_options(test_kernel PRIVATE /W4 /WX)

@@ -65,7 +65,8 @@ SensorTask(P2) -> 6格消息队列 -> ProcessTask(P1)
 
 ## 当前内核边界
 
-- 最多 8 个任务，优先级 1 到 7；0 保留给 Idle 语义。
+- 最多 8 个任务（含自动 Idle），用户任务优先级 1 到 7；0 保留给自动 Idle。
+- `os_TaskCreate` 需要调用方提供静态栈缓冲区；公开阻塞 API 位于 `kernel/src/os_api.c`，Win32 仅实现 `os_port.h` HAL。
 - 10 ms 系统 tick，同优先级时间片为 20 tick。
 - 最多 4 个信号量、4 个队列和 4 个互斥量。
 - 队列缓冲区由调用方在启动前提供。
@@ -79,10 +80,11 @@ SensorTask(P2) -> 6格消息队列 -> ProcessTask(P1)
 建议按这条顺序：
 
 1. `include/os.h`：先看任务能调用哪些 API。
-2. `demos/preemption_demo.c`：看不主动让出的任务行为。
-3. `kernel/src/os_sched.c` 和 `kernel/src/os_time.c`：看优先级选择、时间片和唤醒。
-4. `port/win32/os_port_win32.c`：看 Windows 如何提供真正的异步打断。
-5. `kernel/src/os_sem.c`、`kernel/src/os_queue.c`、`kernel/src/os_mutex.c`：看阻塞、唤醒和优先级继承。
-6. `tests/test_kernel.c`：用测试场景核对每条调度规则。
+2. `kernel/include/os_port.h` 与 `kernel/src/os_api.c`：移植 HAL 与平台无关公开 API。
+3. `demos/preemption_demo.c`：看不主动让出的任务行为。
+4. `kernel/src/os_sched.c` 和 `kernel/src/os_time.c`：看优先级选择、时间片和唤醒。
+5. `port/win32/os_port_win32.c`：看 Windows 如何提供真正的异步打断。
+6. `kernel/src/os_sem.c`、`kernel/src/os_queue.c`、`kernel/src/os_mutex.c`：看阻塞、唤醒和优先级继承。
+7. `tests/test_kernel.c`：用测试场景核对每条调度规则。
 
 更完整的架构、状态迁移、模块职责和验收标准见 `docs/design.md`。

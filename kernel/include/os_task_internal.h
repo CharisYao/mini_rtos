@@ -30,6 +30,9 @@ struct os_task {
     char name[OS_TASK_NAME_MAX];       /* 用于调试和面板显示的任务名。 */
     os_task_entry_t entry;             /* 任务入口函数。 */
     void *argument;                    /* 传给任务入口的用户参数。 */
+    void *sp;                          /* 当前/初始栈指针（由 port 维护）。 */
+    void *stack_memory;                /* 调用方提供的静态栈基址。 */
+    size_t stack_size;                 /* 静态栈字节数。 */
     uint8_t base_priority;             /* 创建时确定的基础优先级。 */
     uint8_t effective_priority;        /* 考虑互斥量继承后的调度优先级。 */
     os_task_state_t state;             /* 当前生命周期状态。 */
@@ -43,5 +46,10 @@ struct os_task {
     os_status_t wait_result;           /* 任务恢复后由公开 API 返回的结果。 */
     os_list_node_t schedule_node;      /* 挂入一条调度链表的唯一节点。 */
 };
+
+/* 若尚不存在则创建优先级 0 的自动 Idle 任务。 */
+os_status_t os_EnsureIdleTask(void);
+/* 判断任务是否为自动 Idle（基础优先级为 0）。 */
+bool os_TaskIsIdle(const os_task_t *task);
 
 #endif

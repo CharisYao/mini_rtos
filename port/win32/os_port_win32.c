@@ -22,6 +22,7 @@
 #include <windows.h>
 
 #include "os.h"
+#include "os_port.h"
 #include "os_list.h"
 #include "os_task_internal.h"
 #include "os_kernel_state.h"
@@ -44,19 +45,8 @@ typedef enum {
     OS_PORT_PHASE_EXITED       /* 任务入口已经返回，线程即将退出。 */
 } os_port_phase_t;
 
-/* 任务线程能够提交给宿主控制线程的内核请求类型 */
-typedef enum {
-    OS_PORT_REQUEST_NONE = 0,      /* 当前没有待处理请求。 */
-    OS_PORT_REQUEST_YIELD,         /* 主动让出 CPU。 */
-    OS_PORT_REQUEST_DELAY,         /* 按 tick 延时。 */
-    OS_PORT_REQUEST_SEM_TAKE,      /* 获取信号量。 */
-    OS_PORT_REQUEST_SEM_GIVE,      /* 释放信号量。 */
-    OS_PORT_REQUEST_QUEUE_SEND,    /* 发送队列消息。 */
-    OS_PORT_REQUEST_QUEUE_RECEIVE, /* 接收队列消息。 */
-    OS_PORT_REQUEST_MUTEX_LOCK,    /* 获取互斥量。 */
-    OS_PORT_REQUEST_MUTEX_UNLOCK,  /* 释放互斥量。 */
-    OS_PORT_REQUEST_EXIT           /* 任务入口返回。 */
-} os_port_request_t;
+/* Mailbox idle value; active codes match os_port_req_id_t. */
+enum { OS_PORT_REQUEST_NONE = 0 };
 
 /* 一个 TCB 在 Windows 上对应的线程、门事件和请求邮箱 */
 typedef struct {
@@ -64,7 +54,7 @@ typedef struct {
     HANDLE thread;                   /* 保存任务栈和 CPU 现场的工作线程。 */
     HANDLE gate;                     /* 内核处理完成后放行任务 API 的自动复位事件。 */
     volatile LONG phase;             /* os_port_phase_t，使用原子操作访问。 */
-    volatile LONG request;           /* os_port_request_t 请求码。 */
+    volatile LONG request;           /* os_port_req_id_t request code. */
     volatile LONG request_ticks;     /* 延时或超时参数。 */
     PVOID volatile request_object;   /* 信号量、队列或互斥量地址。 */
     PVOID volatile request_buffer;   /* 队列发送或接收缓冲区地址。 */
@@ -91,6 +81,8 @@ static os_port_runtime_t g_port;
 /* 观察器由宿主控制线程调用，不属于 miniRTOS 任务。 */
 static os_observer_t g_observer;
 static void *g_observer_context;
+static volatile LONG g_port_critical_nesting;
+static volatile LONG g_port_switch_pended;
 
 /* 根据稳定的 TCB id 找到对应 Windows 工作线程槽位。 */
 static os_port_task_slot_t *os_PortSlotForTask(const os_task_t *task)
@@ -121,57 +113,74 @@ static bool os_PortFailed(void)
     return os_PortReadLong(&g_port.failed) != 0L;
 }
 
-/* 任务循环通过该原子标志判断演示是否仍应继续。 */
-bool os_IsRunning(void)
+/* ---- port HAL ---------------------------------------------------------- */
+
+void os_port_enter_critical(void)
+{
+    InterlockedIncrement(&g_port_critical_nesting);
+}
+
+void os_port_exit_critical(void)
+{
+    LONG nesting = InterlockedDecrement(&g_port_critical_nesting);
+    if (nesting < 0L) {
+        InterlockedExchange(&g_port_critical_nesting, 0L);
+    }
+}
+
+uint32_t os_port_critical_nesting(void)
+{
+    return (uint32_t)os_PortReadLong(&g_port_critical_nesting);
+}
+
+void os_port_pend_context_switch(void)
+{
+    InterlockedExchange(&g_port_switch_pended, 1L);
+    if (g_port.request_event != NULL) {
+        (void)SetEvent(g_port.request_event);
+    }
+}
+
+void *os_port_stack_init(
+    os_task_entry_t entry,
+    void *argument,
+    void *stack_memory,
+    size_t stack_size
+)
+{
+    (void)entry;
+    (void)argument;
+
+    if ((stack_memory == NULL) || (stack_size < OS_MIN_STACK_BYTES)) {
+        return NULL;
+    }
+
+    /* Real context lives on the worker thread stack; record a descending top. */
+    return (uint8_t *)stack_memory + stack_size;
+}
+
+bool os_port_is_running(void)
 {
     return os_PortReadLong(&g_port.running) != 0L;
 }
 
-/**
- * @brief 保存控制台观察回调及其用户上下文。
- * @param observer 观察函数，可以为 NULL。
- * @param context 原样传给观察函数的上下文。
- */
-void os_SetObserver(os_observer_t observer, void *context)
+void os_port_set_observer(os_observer_t observer, void *context)
 {
     g_observer = observer;
     g_observer_context = context;
 }
 
-/* 尝试启用 ANSI 转义序列；失败不影响调度，只影响动态刷新效果。 */
-static void os_PortEnableVirtualTerminal(void)
-{
-    HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD mode;
-
-    if ((output != INVALID_HANDLE_VALUE) && GetConsoleMode(output, &mode)) {
-        (void)SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-    }
-}
-
-/**
- * @brief 将任务线程中的公开 API 调用序列化为一个内核请求。
- * @param request 请求类型。
- * @param ticks 延时或超时参数。
- * @param object 目标内核对象，可以为 NULL。
- * @param buffer 队列消息缓冲区，可以为 NULL。
- * @param wait 是否等待内核完成；任务退出请求不再等待。
- * @return 内核操作结果或宿主状态错误。
- *
- * TLS 标识请求来自哪个任务。任务线程写入单槽邮箱并通知控制线程；需要同步返回的
- * API 随后阻塞在 gate 上，直到该任务再次被 miniRTOS 选中。
- */
-static os_status_t os_PortSubmitRequest(
-    os_port_request_t request,
+os_status_t os_port_task_request(
+    os_port_req_id_t request,
     uint32_t ticks,
     void *object,
-    void *buffer,
-    bool wait
+    void *buffer
 )
 {
     os_port_task_slot_t *slot;
+    const bool wait = (request != OS_PORT_REQ_EXIT);
 
-    if (!os_IsRunning() || (g_port.tls_index == TLS_OUT_OF_INDEXES)) {
+    if (!os_port_is_running() || (g_port.tls_index == TLS_OUT_OF_INDEXES)) {
         return OS_STATUS_BAD_STATE;
     }
 
@@ -180,7 +189,8 @@ static os_status_t os_PortSubmitRequest(
         return OS_STATUS_BAD_STATE;
     }
 
-    /* 先完整发布请求参数，最后写请求码和触发事件。 */
+    os_port_enter_critical();
+
     InterlockedExchange(&slot->response, (LONG)OS_STATUS_BAD_STATE);
     (void)InterlockedExchangePointer(&slot->request_object, object);
     (void)InterlockedExchangePointer(&slot->request_buffer, buffer);
@@ -188,12 +198,13 @@ static os_status_t os_PortSubmitRequest(
     InterlockedExchange(&slot->request, (LONG)request);
     InterlockedExchange(&slot->phase, (LONG)OS_PORT_PHASE_REQUEST);
 
+    os_port_exit_critical();
+
     if (!SetEvent(g_port.request_event)) {
         os_PortFail();
         return OS_STATUS_BAD_STATE;
     }
 
-    /* gate 同时承担“请求完成”和“阻塞任务以后重新获得 CPU”的唤醒作用。 */
     if (wait) {
         if (WaitForSingleObject(slot->gate, INFINITE) != WAIT_OBJECT_0) {
             os_PortFail();
@@ -206,125 +217,16 @@ static os_status_t os_PortSubmitRequest(
     return OS_STATUS_OK;
 }
 
-/* 把主动让出转换为串行内核请求。 */
-void os_Yield(void)
-{
-    (void)os_PortSubmitRequest(
-        OS_PORT_REQUEST_YIELD,
-        0U,
-        NULL,
-        NULL,
-        true
-    );
-}
 
-/* 把任务延时转换为内核请求；0 tick 按主动让出处理。 */
-void os_Delay(uint32_t ticks)
+/* Enable ANSI escapes when possible; failure only affects the dashboard. */
+static void os_PortEnableVirtualTerminal(void)
 {
-    if (ticks == 0U) {
-        os_Yield();
-        return;
+    HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD mode;
+
+    if ((output != INVALID_HANDLE_VALUE) && GetConsoleMode(output, &mode)) {
+        (void)SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
     }
-
-    (void)os_PortSubmitRequest(
-        OS_PORT_REQUEST_DELAY,
-        ticks,
-        NULL,
-        NULL,
-        true
-    );
-}
-
-/* 公开信号量获取只是请求外壳，计数和阻塞语义位于 kernel/src/os_sem.c。 */
-os_status_t os_SemTake(os_sem_t *sem, uint32_t timeout_ticks)
-{
-    return os_PortSubmitRequest(
-        OS_PORT_REQUEST_SEM_TAKE,
-        timeout_ticks,
-        sem,
-        NULL,
-        true
-    );
-}
-
-/* 信号量释放也串行进入内核，因为它可能唤醒并抢占任务。 */
-os_status_t os_SemGive(os_sem_t *sem)
-{
-    return os_PortSubmitRequest(
-        OS_PORT_REQUEST_SEM_GIVE,
-        0U,
-        sem,
-        NULL,
-        true
-    );
-}
-
-/**
- * @brief 将队列发送及其消息地址提交给宿主控制线程。
- * @param queue 目标队列。
- * @param item 待发送消息地址。
- * @param timeout_ticks 超时配置。
- * @return 内核队列发送结果。
- */
-os_status_t os_QueueSend(
-    os_queue_t *queue,
-    const void *item,
-    uint32_t timeout_ticks
-)
-{
-    return os_PortSubmitRequest(
-        OS_PORT_REQUEST_QUEUE_SEND,
-        timeout_ticks,
-        queue,
-        (void *)item,
-        true
-    );
-}
-
-/**
- * @brief 将队列接收及其输出缓冲区提交给宿主控制线程。
- * @param queue 目标队列。
- * @param out_item 接收消息的缓冲区。
- * @param timeout_ticks 超时配置。
- * @return 内核队列接收结果。
- */
-os_status_t os_QueueReceive(
-    os_queue_t *queue,
-    void *out_item,
-    uint32_t timeout_ticks
-)
-{
-    return os_PortSubmitRequest(
-        OS_PORT_REQUEST_QUEUE_RECEIVE,
-        timeout_ticks,
-        queue,
-        out_item,
-        true
-    );
-}
-
-/* 互斥量获取请求由内核执行所有者检查和优先级继承。 */
-os_status_t os_MutexLock(os_mutex_t *mutex, uint32_t timeout_ticks)
-{
-    return os_PortSubmitRequest(
-        OS_PORT_REQUEST_MUTEX_LOCK,
-        timeout_ticks,
-        mutex,
-        NULL,
-        true
-    );
-}
-
-/* 互斥量释放请求由内核执行所有权移交和优先级恢复。 */
-os_status_t os_MutexUnlock(os_mutex_t *mutex)
-{
-    return os_PortSubmitRequest(
-        OS_PORT_REQUEST_MUTEX_UNLOCK,
-        0U,
-        mutex,
-        NULL,
-        true
-    );
 }
 
 /**
@@ -346,18 +248,12 @@ static DWORD WINAPI os_PortTaskEntry(LPVOID parameter)
 
     InterlockedExchange(&slot->phase, (LONG)OS_PORT_PHASE_USER);
 
-    if (os_IsRunning()) {
+    if (os_port_is_running()) {
         slot->task->entry(slot->task->argument);
     }
 
-    if (os_IsRunning()) {
-        (void)os_PortSubmitRequest(
-            OS_PORT_REQUEST_EXIT,
-            0U,
-            NULL,
-            NULL,
-            false
-        );
+    if (os_port_is_running()) {
+        (void)os_port_task_request(OS_PORT_REQ_EXIT, 0U, NULL, NULL);
     }
 
     InterlockedExchange(&slot->phase, (LONG)OS_PORT_PHASE_EXITED);
@@ -456,7 +352,7 @@ static bool os_PortApplyTick(void)
         return false;
     }
     os_PortObserveTick();
-    return os_IsRunning();
+    return os_port_is_running();
 }
 
 /* 扫描固定任务槽位，找到唯一的待处理请求邮箱。 */
@@ -483,16 +379,26 @@ static os_port_task_slot_t *os_PortFindRequester(void)
 static bool os_PortProcessRequest(void)
 {
     os_port_task_slot_t *slot = os_PortFindRequester();
-    os_port_request_t request;
+    os_port_req_id_t request;
     void *object;
     void *buffer;
 
     if (slot == NULL) {
+        if (os_PortReadLong(&g_port_switch_pended) != 0L) {
+            InterlockedExchange(&g_port_switch_pended, 0L);
+            if (!os_KernelValidate()) {
+                return false;
+            }
+            if (os_port_is_running() && !os_PortActivate(g_os_kernel.current)) {
+                return false;
+            }
+            return true;
+        }
         return false;
     }
 
     /* 原子取走请求码和指针，清空邮箱后再验证请求者就是 current。 */
-    request = (os_port_request_t)InterlockedExchange(
+    request = (os_port_req_id_t)InterlockedExchange(
         &slot->request,
         (LONG)OS_PORT_REQUEST_NONE
     );
@@ -505,45 +411,45 @@ static bool os_PortProcessRequest(void)
 
     /* 所有 TCB、就绪队列和对象等待队列修改都在控制线程中串行发生。 */
     switch (request) {
-    case OS_PORT_REQUEST_YIELD:
+    case OS_PORT_REQ_YIELD:
         (void)os_SchedYieldCurrent();
         break;
-    case OS_PORT_REQUEST_DELAY:
+    case OS_PORT_REQ_DELAY:
         (void)os_TimeDelayCurrent((uint32_t)os_PortReadLong(&slot->request_ticks));
         break;
-    case OS_PORT_REQUEST_SEM_TAKE:
+    case OS_PORT_REQ_SEM_TAKE:
         os_SemTakeCurrent(
             (os_sem_t *)object,
             (uint32_t)os_PortReadLong(&slot->request_ticks)
         );
         break;
-    case OS_PORT_REQUEST_SEM_GIVE:
+    case OS_PORT_REQ_SEM_GIVE:
         os_SemGiveCurrent((os_sem_t *)object);
         break;
-    case OS_PORT_REQUEST_QUEUE_SEND:
+    case OS_PORT_REQ_QUEUE_SEND:
         os_QueueSendCurrent(
             (os_queue_t *)object,
             buffer,
             (uint32_t)os_PortReadLong(&slot->request_ticks)
         );
         break;
-    case OS_PORT_REQUEST_QUEUE_RECEIVE:
+    case OS_PORT_REQ_QUEUE_RECEIVE:
         os_QueueReceiveCurrent(
             (os_queue_t *)object,
             buffer,
             (uint32_t)os_PortReadLong(&slot->request_ticks)
         );
         break;
-    case OS_PORT_REQUEST_MUTEX_LOCK:
+    case OS_PORT_REQ_MUTEX_LOCK:
         os_MutexLockCurrent(
             (os_mutex_t *)object,
             (uint32_t)os_PortReadLong(&slot->request_ticks)
         );
         break;
-    case OS_PORT_REQUEST_MUTEX_UNLOCK:
+    case OS_PORT_REQ_MUTEX_UNLOCK:
         os_MutexUnlockCurrent((os_mutex_t *)object);
         break;
-    case OS_PORT_REQUEST_EXIT:
+    case OS_PORT_REQ_EXIT:
         (void)os_SchedTerminateCurrent();
         break;
     case OS_PORT_REQUEST_NONE:
@@ -556,7 +462,7 @@ static bool os_PortProcessRequest(void)
     }
 
     /* 请求握手期间没有丢弃时间，只把 tick 推迟到安全边界。 */
-    while ((g_port.pending_ticks > 0U) && os_IsRunning()) {
+    while ((g_port.pending_ticks > 0U) && os_port_is_running()) {
         g_port.pending_ticks--;
         (void)os_PortApplyTick();
     }
@@ -565,7 +471,7 @@ static bool os_PortProcessRequest(void)
         InterlockedExchange(&g_port.running, 0L);
     }
 
-    if (os_IsRunning() && !os_PortActivate(g_os_kernel.current)) {
+    if (os_port_is_running() && !os_PortActivate(g_os_kernel.current)) {
         return false;
     }
 
@@ -772,7 +678,7 @@ static void os_PortCloseRuntimeObjects(void)
  * 本函数本身就是宿主控制线程：它等待“任务请求事件”和“周期定时器”两类对象，
  * 调用通用内核做调度决定，再通过暂停、恢复或 gate 执行该决定。
  */
-os_status_t os_Start(uint32_t run_ticks)
+os_status_t os_port_start_scheduler(uint32_t run_ticks)
 {
     HANDLE wait_handles[2];
 
@@ -805,7 +711,7 @@ os_status_t os_Start(uint32_t run_ticks)
     wait_handles[1] = g_port.tick_timer;
 
     /* WaitForMultipleObjects 将任务 API 请求和 tick 串行交给同一控制循环。 */
-    while (os_IsRunning()) {
+    while (os_port_is_running()) {
         const DWORD wait_result =
             WaitForMultipleObjects(2U, wait_handles, FALSE, INFINITE);
 

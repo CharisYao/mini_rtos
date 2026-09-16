@@ -33,6 +33,8 @@ typedef struct {
     os_task_t *last_to;                        /* 最近一次切换的目标任务。 */
     os_switch_reason_t last_reason;            /* 最近一次切换原因。 */
     uint32_t switch_count;                     /* 实际任务切换累计次数。 */
+    uint32_t critical_nesting;                 /* 内核临界区嵌套深度。 */
+    bool sched_pending;                        /* 临界区内推迟的调度请求。 */
 } os_kernel_t;
 
 /* 全局内核实例，由 kernel/src/os_task.c 定义。 */
