@@ -120,3 +120,41 @@ if(WIN32)
     add_test(NAME ipc_runtime COMMAND ipc_demo --quick)
     set_tests_properties(ipc_runtime PROPERTIES TIMEOUT 25)
 endif()
+
+# Optional Cortex-M3/M4 (no FPU) port. Host stub/win32 builds stay unchanged.
+option(MINI_RTOS_PORT_CORTEX_M "Build Cortex-M port library" OFF)
+
+set(_mini_rtos_build_cortex_m OFF)
+if(MINI_RTOS_PORT_CORTEX_M)
+    set(_mini_rtos_build_cortex_m ON)
+endif()
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|ARM|aarch32|cortex)")
+    set(_mini_rtos_build_cortex_m ON)
+endif()
+
+if(_mini_rtos_build_cortex_m)
+    enable_language(ASM)
+
+    add_library(mini_rtos_port_cortex_m STATIC
+        port/cortex-m/os_port_cortex_m.c
+        port/cortex-m/os_port_cortex_m_asm.S
+    )
+
+    target_include_directories(mini_rtos_port_cortex_m
+        PUBLIC
+            include
+            port/cortex-m
+        PRIVATE
+            kernel/include
+    )
+
+    target_link_libraries(mini_rtos_port_cortex_m PUBLIC mini_rtos_core)
+
+    if(MSVC)
+        target_compile_options(mini_rtos_port_cortex_m PRIVATE /W4 /WX)
+    else()
+        target_compile_options(mini_rtos_port_cortex_m PRIVATE
+            $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Wpedantic -Werror>
+        )
+    endif()
+endif()

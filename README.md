@@ -88,3 +88,12 @@ SensorTask(P2) -> 6格消息队列 -> ProcessTask(P1)
 7. `tests/test_kernel.c`：用测试场景核对每条调度规则。
 
 更完整的架构、状态迁移、模块职责和验收标准见 `docs/design.md`。
+
+## Cortex-M 移植（Phase B）
+
+`port/cortex-m` 实现了面向 Cortex-M3/M4（无 FPU）的 `os_port.h` HAL，供 STM32F103 /
+STM32F407 等板级工程链接。默认的宿主机构建仍只编译 stub（以及 Windows 上的
+win32）与 `test_kernel`，不受影响。
+
+启用方式、工具链、SysTick/PendSV 向量以及 `SystemCoreClock` 要求见
+`docs/cortex-m-port.md`。
