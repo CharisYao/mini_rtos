@@ -19,6 +19,7 @@
 #include "os_list.h"
 #include "os_time.h"
 #include "os_mutex_internal.h"
+#include "os_port.h"
 
 #include <stddef.h>
 
@@ -57,6 +58,30 @@ static os_task_t *os_CommitSwitch(
     }
 
     return next;
+}
+
+/* 进入内核临界区：先屏蔽 port 侧抢占，再增加嵌套计数。 */
+void os_EnterCritical(void)
+{
+    os_port_enter_critical();
+    g_os_kernel.critical_nesting++;
+}
+
+/* 退出内核临界区；最外层且存在 sched_pending 时请求一次上下文切换。 */
+void os_ExitCritical(void)
+{
+    if (g_os_kernel.critical_nesting == 0U) {
+        os_port_exit_critical();
+        return;
+    }
+
+    g_os_kernel.critical_nesting--;
+    if ((g_os_kernel.critical_nesting == 0U) && g_os_kernel.sched_pending) {
+        g_os_kernel.sched_pending = false;
+        (void)os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false);
+        os_port_pend_context_switch();
+    }
+    os_port_exit_critical();
 }
 
 /**
@@ -390,19 +415,28 @@ void os_WaitMakeReady(os_task_t *task, os_status_t result)
     os_ReadyEnqueue(task);
 }
 
-/* 唤醒任务比当前任务优先级高时立即重新调度。 */
+/* 唤醒任务比当前任务优先级高时重新调度；临界区内仅置 sched_pending。 */
 void os_WaitMaybePreempt(os_task_t *woken_task)
 {
+    bool need_switch;
+
     if (woken_task == NULL) {
         return;
     }
 
-    if (g_os_kernel.current == NULL) {
-        (void)os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false);
-    } else if (woken_task->effective_priority >
-               g_os_kernel.current->effective_priority) {
-        (void)os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false);
+    need_switch = (g_os_kernel.current == NULL) ||
+                  (woken_task->effective_priority >
+                   g_os_kernel.current->effective_priority);
+    if (!need_switch) {
+        return;
     }
+
+    if (g_os_kernel.critical_nesting > 0U) {
+        g_os_kernel.sched_pending = true;
+        return;
+    }
+
+    (void)os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false);
 }
 
 /* 复制只读运行轨迹，避免观察器直接修改内核。 */
@@ -422,11 +456,16 @@ void os_GetRuntimeSnapshot(os_runtime_snapshot_t *out_snapshot)
         (g_os_kernel.current != NULL) ? g_os_kernel.current->slice_remaining : 0U;
 }
 
-/* 只要存在非 UNUSED、非 TERMINATED 任务，宿主循环就仍有工作。 */
+/* 只要存在未终止的非 Idle 任务，宿主循环就仍有工作。 */
 bool os_KernelHasLiveTasks(void)
 {
     for (size_t index = 0U; index < g_os_kernel.task_count; index++) {
-        const os_task_state_t state = g_os_kernel.tasks[index].state;
+        const os_task_t *task = &g_os_kernel.tasks[index];
+        const os_task_state_t state = task->state;
+
+        if (os_TaskIsIdle(task)) {
+            continue;
+        }
 
         if ((state != OS_TASK_UNUSED) && (state != OS_TASK_TERMINATED)) {
             return true;
@@ -575,10 +614,18 @@ bool os_KernelValidate(void)
         }
 
         used_tasks++;
-        if ((task->entry == NULL) || (task->base_priority <= OS_IDLE_PRIORITY) ||
-            (task->base_priority >= OS_PRIORITY_COUNT) ||
-            (task->effective_priority < task->base_priority) ||
-            (task->effective_priority >= OS_PRIORITY_COUNT)) {
+        if (task->entry == NULL) {
+            return false;
+        }
+        if (os_TaskIsIdle(task)) {
+            if ((task->base_priority != OS_IDLE_PRIORITY) ||
+                (task->effective_priority != OS_IDLE_PRIORITY)) {
+                return false;
+            }
+        } else if ((task->base_priority <= OS_IDLE_PRIORITY) ||
+                   (task->base_priority >= OS_PRIORITY_COUNT) ||
+                   (task->effective_priority < task->base_priority) ||
+                   (task->effective_priority >= OS_PRIORITY_COUNT)) {
             return false;
         }
 

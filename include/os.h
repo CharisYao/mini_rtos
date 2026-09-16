@@ -27,9 +27,9 @@ extern "C" {
 #endif
 
 /* 内核采用静态资源配置，所有上限均在调度器启动前确定。 */
-#define OS_MAX_TASKS 8U                 /**< 最大任务数量。 */
+#define OS_MAX_TASKS 8U                 /**< 最大任务数量（含自动 Idle）。 */
 #define OS_PRIORITY_COUNT 8U            /**< 优先级数量，取值范围为 0～7。 */
-#define OS_IDLE_PRIORITY 0U             /**< 为 Idle 语义保留的最低优先级。 */
+#define OS_IDLE_PRIORITY 0U             /**< Idle 任务优先级；用户任务不可使用。 */
 #define OS_TASK_NAME_MAX 24U            /**< 任务名缓冲区大小，包含结尾 '\0'。 */
 #define OS_TICK_MS 10U                  /**< 一个系统 tick 的标称时长，单位 ms。 */
 #define OS_TIME_SLICE_TICKS 20U         /**< 同优先级任务的时间片长度。 */
@@ -39,6 +39,8 @@ extern "C" {
 #define OS_MAX_SEMAPHORES 4U            /**< 静态信号量控制块数量。 */
 #define OS_MAX_QUEUES 4U                /**< 静态消息队列控制块数量。 */
 #define OS_MAX_MUTEXES 4U               /**< 静态互斥量控制块数量。 */
+#define OS_MIN_STACK_BYTES 64U          /**< 任务栈缓冲区最小字节数。 */
+#define OS_IDLE_STACK_BYTES 256U        /**< 自动 Idle 任务静态栈大小。 */
 
 /* 对应用隐藏内部字段的任务控制块类型。 */
 typedef struct os_task os_task_t;
@@ -110,13 +112,16 @@ void os_Init(void);
 /**
  * @brief 从静态 TCB 池创建一个任务。
  *
- * 本函数只登记平台无关的任务信息；Windows 工作线程在 os_Start() 中创建。
+ * 调用方必须提供静态栈缓冲区。Win32 移植仍用宿主线程保存真实 CPU 现场，但会
+ * 记录栈指针以便与 Cortex-M 等裸机移植共用创建路径。
  *
  * @param out_task 返回创建成功的 TCB 指针；失败时写入 NULL。
  * @param name 以 '\0' 结尾且长度小于 OS_TASK_NAME_MAX 的任务名。
  * @param entry 任务入口函数。
  * @param argument 传给任务入口的用户参数，可以为 NULL。
  * @param priority 固定基础优先级，必须大于 0 且小于 OS_PRIORITY_COUNT。
+ * @param stack_memory 调用方提供的静态栈缓冲区。
+ * @param stack_size 栈缓冲区字节数，必须 >= OS_MIN_STACK_BYTES。
  * @return OS_STATUS_OK 表示成功，否则返回参数、状态或容量错误。
  */
 os_status_t os_TaskCreate(
@@ -124,7 +129,9 @@ os_status_t os_TaskCreate(
     const char *name,
     os_task_entry_t entry,
     void *argument,
-    uint8_t priority
+    uint8_t priority,
+    void *stack_memory,
+    size_t stack_size
 );
 
 /* 返回任务名称；task 为 NULL 时返回 NULL。 */
@@ -139,8 +146,8 @@ const char *os_TaskStateName(os_task_state_t state);
 const char *os_SwitchReasonName(os_switch_reason_t reason);
 
 /**
- * @brief 在 Windows 移植层启动任务线程、系统 tick 和调度循环。
- * @param run_ticks 为 0 时运行到所有任务结束；非 0 时到达该 tick 后停止。
+ * @brief 确保自动 Idle 任务存在，然后启动移植层调度器。
+ * @param run_ticks 为 0 时运行到仅剩 Idle；非 0 时到达该 tick 后停止。
  * @return OS_STATUS_OK 表示正常结束，宿主对象或运行不变量失败时返回错误。
  */
 os_status_t os_Start(uint32_t run_ticks);
@@ -150,7 +157,7 @@ void os_Yield(void);
 void os_Delay(uint32_t ticks);
 /* 返回当前系统 tick，支持在任务计算循环中无锁读取。 */
 uint32_t os_TickGet(void);
-/* 返回 Windows 宿主调度循环是否仍在运行。 */
+/* 返回调度器是否仍在运行。 */
 bool os_IsRunning(void);
 
 /**
@@ -183,6 +190,12 @@ os_status_t os_SemInit(
 os_status_t os_SemTake(os_sem_t *sem, uint32_t timeout_ticks);
 /* 释放一次信号量，并优先唤醒等待队列中的最高优先级任务。 */
 os_status_t os_SemGive(os_sem_t *sem);
+/**
+ * @brief 在中断/tick 上下文释放信号量；不会阻塞，必要时置位 sched_pending。
+ * @param sem 目标信号量。
+ * @return OS_STATUS_OK 或参数/容量错误。
+ */
+os_status_t os_SemGiveFromISR(os_sem_t *sem);
 /* 返回当前信号量计数；无效对象返回 0。 */
 uint32_t os_SemGetCount(const os_sem_t *sem);
 

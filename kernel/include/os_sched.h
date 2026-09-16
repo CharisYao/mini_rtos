@@ -10,6 +10,10 @@
 
 #include "os_kernel_state.h"
 
+/* 进入/退出内核临界区；最外层退出时若 sched_pending 则 pend 上下文切换。 */
+void os_EnterCritical(void);
+void os_ExitCritical(void);
+
 /* 将 READY 任务加入其有效优先级队列末尾。 */
 void os_ReadyEnqueue(os_task_t *task);
 /* 将任务从其有效优先级就绪队列移除。 */
@@ -55,12 +59,12 @@ os_task_t *os_WaitBlockCurrent(
 os_task_t *os_WaitPop(os_list_t *wait_list);
 /* 清除对象等待信息并将任务重新加入就绪队列。 */
 void os_WaitMakeReady(os_task_t *task, os_status_t result);
-/* 被唤醒任务优先级更高时立即执行一次抢占调度。 */
+/* 被唤醒任务优先级更高时立即执行一次抢占调度（临界区内改为 sched_pending）。 */
 void os_WaitMaybePreempt(os_task_t *woken_task);
 /* 修改任务有效优先级，并同步调整其所在调度队列。 */
 void os_TaskSetEffectivePriority(os_task_t *task, uint8_t priority);
 
-/* 判断是否仍存在未终止任务。 */
+/* 判断是否仍存在未终止的非 Idle 任务。 */
 bool os_KernelHasLiveTasks(void);
 /* 宿主运行结束后清空调度容器并终止全部任务。 */
 void os_KernelStopAll(void);

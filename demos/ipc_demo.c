@@ -16,6 +16,18 @@
 
 #include "os.h"
 
+#define DEMO_STACK_BYTES 4096U
+
+static uint8_t g_demo_stacks[OS_MAX_TASKS][DEMO_STACK_BYTES];
+static size_t g_demo_stack_cursor;
+
+static void *demoAllocStack(void)
+{
+    void *stack = g_demo_stacks[g_demo_stack_cursor];
+    g_demo_stack_cursor++;
+    return stack;
+}
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -309,21 +321,27 @@ int main(int argc, char **argv)
              sensorTask,
              &demo,
              2U
-         ) != OS_STATUS_OK) ||
+         ,
+             demoAllocStack(),
+             DEMO_STACK_BYTES) != OS_STATUS_OK) ||
         (os_TaskCreate(
              &demo.processTask,
              "ProcessTask",
              processTask,
              &demo,
              1U
-         ) != OS_STATUS_OK) ||
+         ,
+             demoAllocStack(),
+             DEMO_STACK_BYTES) != OS_STATUS_OK) ||
         (os_TaskCreate(
              &demo.alarmTask,
              "AlarmTask",
              alarmTask,
              &demo,
              3U
-         ) != OS_STATUS_OK)) {
+         ,
+             demoAllocStack(),
+             DEMO_STACK_BYTES) != OS_STATUS_OK)) {
         fprintf(stderr, "failed to initialize IPC demo\n");
         return 1;
     }

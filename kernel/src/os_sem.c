@@ -134,34 +134,48 @@ void os_SemTakeCurrent(os_sem_t *sem, uint32_t timeout_ticks)
  *
  * 已有等待者时，本次释放直接交给最高优先级等待任务，不先增加再减少计数。
  */
+os_status_t os_SemGiveFromIsrContext(os_sem_t *sem, os_task_t **out_woken)
+{
+    os_task_t *waiter;
+
+    if (out_woken != NULL) {
+        *out_woken = NULL;
+    }
+
+    if (!os_SemIsValid(sem)) {
+        return OS_STATUS_INVALID_ARGUMENT;
+    }
+
+    waiter = os_WaitPop(&sem->waiters);
+    if (waiter != NULL) {
+        os_WaitMakeReady(waiter, OS_STATUS_OK);
+        if (out_woken != NULL) {
+            *out_woken = waiter;
+        }
+        return OS_STATUS_OK;
+    }
+
+    if (sem->count >= sem->maximum_count) {
+        return OS_STATUS_LIMIT_REACHED;
+    }
+
+    sem->count++;
+    return OS_STATUS_OK;
+}
+
 void os_SemGiveCurrent(os_sem_t *sem)
 {
     os_task_t *current = g_os_kernel.current;
-    os_task_t *waiter;
+    os_task_t *woken = NULL;
+    os_status_t status;
 
     if ((current == NULL) || (current->state != OS_TASK_RUNNING)) {
         return;
     }
 
-    if (!os_SemIsValid(sem)) {
-        current->wait_result = OS_STATUS_INVALID_ARGUMENT;
-        return;
+    status = os_SemGiveFromIsrContext(sem, &woken);
+    current->wait_result = status;
+    if (woken != NULL) {
+        os_WaitMaybePreempt(woken);
     }
-
-    /* 直接把这一次资源交给等待者，信号量计数仍保持为 0。 */
-    waiter = os_WaitPop(&sem->waiters);
-    if (waiter != NULL) {
-        current->wait_result = OS_STATUS_OK;
-        os_WaitMakeReady(waiter, OS_STATUS_OK);
-        os_WaitMaybePreempt(waiter);
-        return;
-    }
-
-    if (sem->count >= sem->maximum_count) {
-        current->wait_result = OS_STATUS_LIMIT_REACHED;
-        return;
-    }
-
-    sem->count++;
-    current->wait_result = OS_STATUS_OK;
 }

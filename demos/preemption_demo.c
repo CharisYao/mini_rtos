@@ -17,6 +17,18 @@
 
 #include "os.h"
 
+#define DEMO_STACK_BYTES 4096U
+
+static uint8_t g_demo_stacks[OS_MAX_TASKS][DEMO_STACK_BYTES];
+static size_t g_demo_stack_cursor;
+
+static void *demoAllocStack(void)
+{
+    void *stack = g_demo_stacks[g_demo_stack_cursor];
+    g_demo_stack_cursor++;
+    return stack;
+}
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -270,9 +282,13 @@ int main(int argc, char **argv)
     }
 
     os_Init();
-    if (os_TaskCreate(&demo.carTask, "CarTask", carTask, NULL, 1U) !=
+    if (os_TaskCreate(&demo.carTask, "CarTask", carTask, NULL, 1U,
+             demoAllocStack(),
+             DEMO_STACK_BYTES) !=
             OS_STATUS_OK ||
-        os_TaskCreate(&demo.computeTask, "ComputeTask", computeTask, NULL, 1U) !=
+        os_TaskCreate(&demo.computeTask, "ComputeTask", computeTask, NULL, 1U,
+             demoAllocStack(),
+             DEMO_STACK_BYTES) !=
             OS_STATUS_OK ||
         os_TaskCreate(
             &demo.emergencyTask,
@@ -280,7 +296,9 @@ int main(int argc, char **argv)
             emergencyTask,
             NULL,
             3U
-        ) != OS_STATUS_OK) {
+        ,
+             demoAllocStack(),
+             DEMO_STACK_BYTES) != OS_STATUS_OK) {
         fprintf(stderr, "failed to create demo tasks\n");
         return 1;
     }
