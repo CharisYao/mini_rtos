@@ -1,5 +1,6 @@
 /build/
 /build-*/
+/boardVerify/build/
 *.exe
 *.obj
 *.o
