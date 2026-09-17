@@ -140,20 +140,7 @@ void UsageFault_Handler(void)
 }
 
 /**
-  * @brief This function handles System service call via SWI instruction.
-  */
-void SVC_Handler(void)
-{
-  /* USER CODE BEGIN SVCall_IRQn 0 */
-
-  /* USER CODE END SVCall_IRQn 0 */
-  /* USER CODE BEGIN SVCall_IRQn 1 */
-
-  /* USER CODE END SVCall_IRQn 1 */
-}
-
-/**
-  * @brief This function handles Debug monitor.
+  * @brief Debug monitor (unused).
   */
 void DebugMon_Handler(void)
 {
@@ -165,32 +152,13 @@ void DebugMon_Handler(void)
   /* USER CODE END DebugMonitor_IRQn 1 */
 }
 
-/**
-  * @brief This function handles Pendable request for system service.
-  */
-void PendSV_Handler(void)
-{
-  /* USER CODE BEGIN PendSV_IRQn 0 */
-
-  /* USER CODE END PendSV_IRQn 0 */
-  /* USER CODE BEGIN PendSV_IRQn 1 */
-
-  /* USER CODE END PendSV_IRQn 1 */
-}
-
-/**
-  * @brief This function handles System tick timer.
-  */
-void SysTick_Handler(void)
-{
-  /* USER CODE BEGIN SysTick_IRQn 0 */
-
-  /* USER CODE END SysTick_IRQn 0 */
-
-  /* USER CODE BEGIN SysTick_IRQn 1 */
-
-  /* USER CODE END SysTick_IRQn 1 */
-}
+/*
+ * SVC_Handler / PendSV_Handler / SysTick_Handler are provided by
+ * mini_rtos port/cortex-m (strong symbols). HAL tick uses TIM4
+ * (stm32f1xx_hal_timebase_tim.c), so SysTick is reserved for the RTOS.
+ * Do not reintroduce empty strong stubs here after CubeMX regenerate —
+ * leave these vectors to the port, or mark any Cube stubs as weak.
+ */
 
 /******************************************************************************/
 /* STM32F1xx Peripheral Interrupt Handlers                                    */
