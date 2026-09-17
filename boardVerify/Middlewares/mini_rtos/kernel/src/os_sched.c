@@ -446,7 +446,7 @@ void os_GetRuntimeSnapshot(os_runtime_snapshot_t *out_snapshot)
         return;
     }
 
-    out_snapshot->tick = atomic_load_explicit(&g_os_kernel.tick, memory_order_relaxed);
+    out_snapshot->tick = g_os_kernel.tick;
     out_snapshot->current = g_os_kernel.current;
     out_snapshot->last_from = g_os_kernel.last_from;
     out_snapshot->last_to = g_os_kernel.last_to;

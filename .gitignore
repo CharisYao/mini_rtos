@@ -10,3 +10,14 @@
 *.ilk
 *.log
 .vscode/
+*.d
+*.crf
+*.lst
+*.uvguix
+*.map
+*.lnp
+*.sct
+*.hex
+*.axf
+*.dep
+*.htm
