@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Board-local firmware build: CubeMX/HAL under this tree + mini_rtos core/port.
+# Board-local firmware build: CubeMX/HAL under this tree + vendored mini_rtos.
 # Does not replace the host stub tests at the repo root.
 project(boardVerify C ASM)
 
@@ -8,44 +8,42 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON) # CMSIS/HAL use GNU extensions
 
-set(MINI_RTOS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set(MINI_RTOS_MW "${CMAKE_CURRENT_SOURCE_DIR}/Middlewares/mini_rtos")
 
-# ---- mini_rtos core + Cortex-M port (same sources as root CMake) ------------
-# Enable the port library explicitly (also auto-on when CMAKE_SYSTEM_PROCESSOR
-# is arm via the toolchain file).
+# ---- mini_rtos core + Cortex-M port (vendored under Middlewares/) ------------
 set(MINI_RTOS_PORT_CORTEX_M ON CACHE BOOL "Build Cortex-M port library" FORCE)
 
 add_library(mini_rtos_core STATIC
-    ${MINI_RTOS_ROOT}/kernel/src/os_list.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_task.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_sched.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_time.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_sem.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_queue.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_mutex.c
-    ${MINI_RTOS_ROOT}/kernel/src/os_api.c
+    ${MINI_RTOS_MW}/kernel/src/os_list.c
+    ${MINI_RTOS_MW}/kernel/src/os_task.c
+    ${MINI_RTOS_MW}/kernel/src/os_sched.c
+    ${MINI_RTOS_MW}/kernel/src/os_time.c
+    ${MINI_RTOS_MW}/kernel/src/os_sem.c
+    ${MINI_RTOS_MW}/kernel/src/os_queue.c
+    ${MINI_RTOS_MW}/kernel/src/os_mutex.c
+    ${MINI_RTOS_MW}/kernel/src/os_api.c
 )
 
 target_include_directories(mini_rtos_core
     PUBLIC
-        ${MINI_RTOS_ROOT}/include
+        ${MINI_RTOS_MW}/include
     PRIVATE
-        ${MINI_RTOS_ROOT}/kernel/include
+        ${MINI_RTOS_MW}/kernel/include
 )
 
 target_compile_options(mini_rtos_core PRIVATE -Wall -Wextra)
 
 add_library(mini_rtos_port_cortex_m STATIC
-    ${MINI_RTOS_ROOT}/port/cortex-m/os_port_cortex_m.c
-    ${MINI_RTOS_ROOT}/port/cortex-m/os_port_cortex_m_asm.S
+    ${MINI_RTOS_MW}/port/cortex-m/os_port_cortex_m.c
+    ${MINI_RTOS_MW}/port/cortex-m/os_port_cortex_m_asm.S
 )
 
 target_include_directories(mini_rtos_port_cortex_m
     PUBLIC
-        ${MINI_RTOS_ROOT}/include
-        ${MINI_RTOS_ROOT}/port/cortex-m
+        ${MINI_RTOS_MW}/include
+        ${MINI_RTOS_MW}/port/cortex-m
     PRIVATE
-        ${MINI_RTOS_ROOT}/kernel/include
+        ${MINI_RTOS_MW}/kernel/include
 )
 
 target_link_libraries(mini_rtos_port_cortex_m PUBLIC mini_rtos_core)
@@ -74,7 +72,7 @@ set(BOARD_HAL_SRC
 
 set(BOARD_APP_SRC
     Core/Src/main.c
-    mini_rtos.c
+    App/mini_rtos.c
     Core/Src/gpio.c
     Core/Src/usart.c
     Core/Src/stm32f1xx_it.c
@@ -92,13 +90,14 @@ add_executable(boardVerify.elf
 
 target_include_directories(boardVerify.elf PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    App
     Core/Inc
     Drivers/STM32F1xx_HAL_Driver/Inc
     Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
     Drivers/CMSIS/Device/ST/STM32F1xx/Include
     Drivers/CMSIS/Include
-    ${MINI_RTOS_ROOT}/include
-    ${MINI_RTOS_ROOT}/kernel/include
+    ${MINI_RTOS_MW}/include
+    ${MINI_RTOS_MW}/kernel/include
 )
 
 target_compile_definitions(boardVerify.elf PRIVATE

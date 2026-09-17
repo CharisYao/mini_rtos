@@ -7,6 +7,15 @@ timebase so **SysTick is free for mini_rtos**. Firmware is built with
 Phase C board smoke: three LEDs + USART1 status using `os_Init` /
 `os_TaskCreate` / `os_Start` plus semaphore, mutex, and queue.
 
+## Layout
+
+| Path | Role |
+| --- | --- |
+| `App/` | Board app layer (`mini_rtos.c` / `mini_rtos.h`); `main.c` stays HAL-only and calls `mini_rtos_app_start()` |
+| `Middlewares/mini_rtos/` | Vendored kernel + public `include/` + `port/cortex-m` (self-contained under `boardVerify/`) |
+| `Core/` + `Drivers/` | CubeMX HAL / CMSIS |
+| `MDK-ARM/` | Keil uVision project (armasm twin for PendSV/SVC) |
+
 ## Prerequisites
 
 ```bash
@@ -55,12 +64,12 @@ arm-none-eabi-size boardVerify/build/boardVerify.elf
 | Path | Role |
 | --- | --- |
 | **CMake + arm-none-eabi** | Primary build for Linux/CI; produces `boardVerify/build/boardVerify.elf` |
-| `MDK-ARM/` | Original CubeMX Keil project kept for reference only |
+| `MDK-ARM/` | CubeMX Keil project wired to the same App + Middlewares sources |
 
 Prefer CMake. If you open the Keil project, mirror the same USER CODE in
 `main.c`, keep TIM4 as HAL timebase, and do **not** redefine
 `SVC_Handler` / `PendSV_Handler` / `SysTick_Handler` (those come from
-`port/cortex-m`).
+`Middlewares/mini_rtos/port/cortex-m`).
 
 ## Pin mapping (CubeMX `boardVerify.ioc`)
 
@@ -83,11 +92,11 @@ After reset, the smoke creates five user tasks (plus automatic Idle):
 
 | Task | Prio | Behavior |
 | --- | --- | --- |
-| `heartbeat` | 1 | Toggles **LED1** every ~500 ms (low-freq heartbeat)
- | `worker` | 5 | **LED2** on during a short busy spin, off while delayed |
- | `producer` | 2 | Sends a queue item and `os_SemGive` ~every 300 ms |
- | `consumer` | 3 | `os_SemTake` + `os_QueueReceive`; pulses **LED3** |
- | `status` | 2 | ~1 Hz USART1 line (mutex-protected TX) |
+| `heartbeat` | 1 | Toggles **LED1** every ~500 ms (low-freq heartbeat) |
+| `worker` | 5 | **LED2** on during a short busy spin, off while delayed |
+| `producer` | 2 | Sends a queue item and `os_SemGive` ~every 300 ms |
+| `consumer` | 3 | `os_SemTake` + `os_QueueReceive`; pulses **LED3** |
+| `status` | 2 | ~1 Hz USART1 line (mutex-protected TX) |
 
 Example UART line (115200 8N1 on PA9):
 
@@ -107,8 +116,8 @@ RUNNING when the status snapshot was taken (often `status` or `worker`).
 | CubeMX `Core/` + `Drivers/` | HAL, CMSIS device, TIM4 tick, USART1, GPIO LEDs |
 | `Core/Startup/startup_stm32f103xb.s` | GNU ARM startup / vector table |
 | `STM32F103XB_FLASH.ld` | 64K FLASH / 20K RAM (F103C8) |
-| `mini_rtos_core` | Kernel from repo `kernel/` + `include/` |
-| `mini_rtos_port_cortex_m` | `port/cortex-m` (PendSV / SysTick / SVC) |
+| `App/mini_rtos.c` | Phase C smoke entry (`mini_rtos_app_start`) |
+| `Middlewares/mini_rtos` | Vendored `include/` + `kernel/` + `port/cortex-m` |
 
 CPU flags: `-mcpu=cortex-m3 -mthumb -mfloat-abi=soft`.
 
@@ -117,13 +126,14 @@ CPU flags: `-mcpu=cortex-m3 -mthumb -mfloat-abi=soft`.
 - HAL uses **TIM4** (`Core/Src/stm32f1xx_hal_timebase_tim.c`) for `HAL_IncTick()`.
 - Empty Cube stubs for `SVC_Handler`, `PendSV_Handler`, and `SysTick_Handler`
   were removed from `Core/Src/stm32f1xx_it.c` so the strong symbols from
-  `port/cortex-m` are linked into the vector table.
+  `Middlewares/mini_rtos/port/cortex-m` are linked into the vector table.
 - If you re-generate from CubeMX, delete those three strong empty handlers
   again (or make them weak). Keep TIM timebase selected in CubeMX.
 
 ## Host tests (unchanged)
 
-Repo-root CMake (native gcc) still builds stub/`test_kernel` only:
+Repo-root CMake (native gcc) still builds stub/`test_kernel` only (from the
+repo-root `kernel/` / `include/` / `port/` trees):
 
 ```bash
 cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
@@ -133,13 +143,14 @@ Do not point the host build at this board toolchain file.
 
 ## Keil (MDK-ARM)
 
-Open `MDK-ARM/boardVerify.uvprojx`. Groups already include:
+Open `MDK-ARM/boardVerify.uvprojx`. Groups:
 
-- app: `Core/Src/*`, `mini_rtos.c`
-- `mini_rtos/kernel` → `../../kernel/src/*.c`
-- `mini_rtos/port` → `os_port_cortex_m.c` + `os_port_cortex_m_asm_keil.s` (armasm for Keil)
+- `App` → `../App/mini_rtos.c`
+- `Middlewares/mini_rtos/kernel` → `../Middlewares/mini_rtos/kernel/src/*.c`
+- `Middlewares/mini_rtos/port` → `os_port_cortex_m.c` + `os_port_cortex_m_asm_keil.s` (armasm for Keil; FileType 2)
 
-Include paths cover `../../include`, `../../kernel/include`, `../../port/cortex-m`.
+Include paths: `../App`, `../Middlewares/mini_rtos/include`,
+`../Middlewares/mini_rtos/kernel/include`, `../Middlewares/mini_rtos/port/cortex-m`
+(plus HAL/CMSIS).
 
 CMake/`arm-none-eabi-gcc` uses GNU `os_port_cortex_m_asm.S` instead of the Keil `.s`.
-
