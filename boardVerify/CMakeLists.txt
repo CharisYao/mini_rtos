@@ -74,6 +74,7 @@ set(BOARD_HAL_SRC
 
 set(BOARD_APP_SRC
     Core/Src/main.c
+    mini_rtos.c
     Core/Src/gpio.c
     Core/Src/usart.c
     Core/Src/stm32f1xx_it.c
@@ -90,6 +91,7 @@ add_executable(boardVerify.elf
 )
 
 target_include_directories(boardVerify.elf PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     Core/Inc
     Drivers/STM32F1xx_HAL_Driver/Inc
     Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
