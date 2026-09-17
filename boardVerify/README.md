@@ -54,7 +54,7 @@ arm-none-eabi-size boardVerify/build/boardVerify.elf
 
 | Path | Role |
 | --- | --- |
-| **CMake + arm-none-eabi** | Primary build for Linux/CI; produces `boardVerify.elf` |
+| **CMake + arm-none-eabi** | Primary build for Linux/CI; produces `boardVerify/build/boardVerify.elf` |
 | `MDK-ARM/` | Original CubeMX Keil project kept for reference only |
 
 Prefer CMake. If you open the Keil project, mirror the same USER CODE in
@@ -83,11 +83,11 @@ After reset, the smoke creates five user tasks (plus automatic Idle):
 
 | Task | Prio | Behavior |
 | --- | --- | --- |
-| `heartbeat` | 1 | Toggles **LED1** every ~500 ms (low-freq heartbeat) |
-| `worker` | 5 | **LED2** on during a short busy spin, off while delayed |
-| `producer` | 2 | Sends a queue item and `os_SemGive` ~every 300 ms |
-| `consumer` | 3 | `os_SemTake` + `os_QueueReceive`; pulses **LED3** |
-| `status` | 2 | ~1 Hz USART1 line (mutex-protected TX) |
+| `heartbeat` | 1 | Toggles **LED1** every ~500 ms (low-freq heartbeat)
+ | `worker` | 5 | **LED2** on during a short busy spin, off while delayed |
+ | `producer` | 2 | Sends a queue item and `os_SemGive` ~every 300 ms |
+ | `consumer` | 3 | `os_SemTake` + `os_QueueReceive`; pulses **LED3** |
+ | `status` | 2 | ~1 Hz USART1 line (mutex-protected TX) |
 
 Example UART line (115200 8N1 on PA9):
 
@@ -97,8 +97,8 @@ tick=100 task=status hb=2 wk=4 prod=3 cons=3 sync=3 q=0
 ```
 
 Counters: `hb` heartbeat toggles, `wk` worker cycles, `prod`/`cons`/`sync`
-queue+sem events, `q` current queue depth. `task=` is the name of whoever
-was RUNNING when the status snapshot was taken (often `status` or `worker`).
+queue+sem events, `q` current queue depth. `task=` is the name of whoever was
+RUNNING when the status snapshot was taken (often `status` or `worker`).
 
 ## What this links
 
@@ -130,3 +130,16 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 ```
 
 Do not point the host build at this board toolchain file.
+
+## Keil (MDK-ARM)
+
+Open `MDK-ARM/boardVerify.uvprojx`. Groups already include:
+
+- app: `Core/Src/*`, `mini_rtos.c`
+- `mini_rtos/kernel` → `../../kernel/src/*.c`
+- `mini_rtos/port` → `os_port_cortex_m.c` + `os_port_cortex_m_asm_keil.s` (armasm for Keil)
+
+Include paths cover `../../include`, `../../kernel/include`, `../../port/cortex-m`.
+
+CMake/`arm-none-eabi-gcc` uses GNU `os_port_cortex_m_asm.S` instead of the Keil `.s`.
+
