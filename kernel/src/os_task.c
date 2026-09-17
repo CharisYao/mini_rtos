@@ -151,7 +151,7 @@ void os_Init(void)
         os_ListInit(&g_os_kernel.ready[index]);
     }
     os_ListInit(&g_os_kernel.delayed);
-    atomic_init(&g_os_kernel.tick, 0U);
+    g_os_kernel.tick = 0U;
     os_SemKernelReset();
     os_QueueKernelReset();
     os_MutexKernelReset();

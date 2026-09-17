@@ -27,10 +27,10 @@ static bool os_TickReached(uint32_t now, uint32_t target)
     return (int32_t)(now - target) >= 0;
 }
 
-/* 原子读取 tick，使正在计算的任务无需进入内核请求即可查询时间。 */
+/* 读取 tick。任务可在不进入内核临界区时查询时间。 */
 uint32_t os_TickGet(void)
 {
-    return atomic_load_explicit(&g_os_kernel.tick, memory_order_relaxed);
+    return g_os_kernel.tick;
 }
 
 /**
@@ -67,8 +67,8 @@ os_task_t *os_TimeDelayCurrent(uint32_t ticks)
  */
 os_task_t *os_TimeTick(void)
 {
-    uint32_t now =
-        atomic_fetch_add_explicit(&g_os_kernel.tick, 1U, memory_order_relaxed) + 1U;
+    g_os_kernel.tick++;
+    uint32_t now = g_os_kernel.tick;
     os_list_node_t *node = g_os_kernel.delayed.head;
     bool woke_higher_priority = false;
     bool slice_expired = false;

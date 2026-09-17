@@ -55,11 +55,41 @@ void os_port_pendsv_save_psp(uint32_t psp_after_push);
 uint32_t os_port_pendsv_restore_psp(void);
 void os_port_enable_systick(void);
 
+#if defined(__CC_ARM)
+__weak uint32_t SystemCoreClock = OS_PORT_CORTEX_M_DEFAULT_CORE_CLOCK_HZ;
+#else
 __attribute__((weak)) uint32_t SystemCoreClock =
     OS_PORT_CORTEX_M_DEFAULT_CORE_CLOCK_HZ;
+#endif
 
 /* ---- Intrinsics --------------------------------------------------------- */
 
+#if defined(__CC_ARM)
+static __inline void os_port_disable_irq(void)
+{
+    __disable_irq();
+}
+
+static __inline void os_port_enable_irq(void)
+{
+    __enable_irq();
+}
+
+static __inline void os_port_dsb(void)
+{
+    __dsb(0xF);
+}
+
+static __inline void os_port_isb(void)
+{
+    __isb(0xF);
+}
+
+static __inline void os_port_wfi(void)
+{
+    __wfi();
+}
+#else
 static inline void os_port_disable_irq(void)
 {
     __asm volatile("cpsid i" ::: "memory");
@@ -80,13 +110,19 @@ static inline void os_port_isb(void)
     __asm volatile("isb" ::: "memory");
 }
 
+static inline void os_port_wfi(void)
+{
+    __asm volatile("wfi");
+}
+#endif
+
 /* ---- Task exit trampoline (stacked LR) ---------------------------------- */
 
 static void os_port_task_exit(void)
 {
     (void)os_port_task_request(OS_PORT_REQ_EXIT, 0U, NULL, NULL);
     for (;;) {
-        __asm volatile("wfi");
+        os_port_wfi();
     }
 }
 
@@ -349,7 +385,7 @@ uint32_t os_port_pendsv_restore_psp(void)
     g_os_port_psp_owner = next;
     if ((next == NULL) || (next->sp == NULL)) {
         for (;;) {
-            __asm volatile("wfi");
+            os_port_wfi();
         }
     }
     return (uint32_t)(uintptr_t)next->sp;

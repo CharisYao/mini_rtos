@@ -297,7 +297,7 @@ static bool testDelayWakeHandlesTickWrap(void)
     os_Init();
     CHECK(os_TaskCreate(&task, "task", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
     CHECK(os_SchedStart() == task);
-    atomic_store_explicit(&g_os_kernel.tick, UINT32_MAX - 1U, memory_order_relaxed);
+    g_os_kernel.tick = UINT32_MAX - 1U;
 
     CHECK(os_TimeDelayCurrent(3U) == NULL);
     CHECK(task->wake_tick == 1U);
@@ -982,7 +982,7 @@ static bool testRandomizedStateTransitionsAcrossTickWrap(void)
     }
 
     CHECK(os_SchedStart() != NULL);
-    atomic_store_explicit(&g_os_kernel.tick, UINT32_MAX - 100U, memory_order_relaxed);
+    g_os_kernel.tick = UINT32_MAX - 100U;
 
     /* 固定种子覆盖让出、延时、IPC、互斥量和空闲 tick，失败可稳定复现。 */
     for (size_t step = 0U; step < 10000U; step++) {

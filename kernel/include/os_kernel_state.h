@@ -16,8 +16,6 @@
 #include "os_list.h"
 #include "os_task_internal.h"
 
-#include <stdatomic.h>
-
 /* miniRTOS 唯一的全局内核状态。 */
 typedef struct {
     bool initialized;                          /* os_Init() 是否已经完成。 */
@@ -27,7 +25,8 @@ typedef struct {
     os_list_t ready[OS_PRIORITY_COUNT];        /* 每个优先级一条 FIFO 就绪队列。 */
     os_list_t delayed;                         /* 等待 wake_tick 的任务集合。 */
     uint8_t ready_bitmap;                      /* 非空就绪队列的优先级位图。 */
-    atomic_uint_least32_t tick;                /* 可由任务安全读取的系统 tick。 */
+    /* ARMCC 5 无 stdatomic.h。Cortex-M 对齐 32 位读写本身原子，任务可读 tick。 */
+    volatile uint32_t tick;
     os_task_t *current;                        /* 当前 RUNNING 任务。 */
     os_task_t *last_from;                      /* 最近一次切换的来源任务。 */
     os_task_t *last_to;                        /* 最近一次切换的目标任务。 */
