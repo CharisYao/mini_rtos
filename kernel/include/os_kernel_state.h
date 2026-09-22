@@ -39,4 +39,7 @@ typedef struct {
 /* 全局内核实例，由 kernel/src/os_task.c 定义。 */
 extern os_kernel_t g_os_kernel;
 
+/* 记录最近一次公开 API 的状态，供 osGetLastError() 读取。 */
+void os_SetLastError(os_status_t status);
+
 #endif

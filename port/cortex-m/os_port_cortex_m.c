@@ -288,7 +288,7 @@ void SysTick_Handler(void)
         os_port_pend_context_switch();
     }
 
-    if ((os_TickGet() % OS_OBSERVER_PERIOD_TICKS) == 0U) {
+    if ((xTaskGetTickCount() % OS_OBSERVER_PERIOD_TICKS) == 0U) {
         os_port_maybe_observe();
     }
 }

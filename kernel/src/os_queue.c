@@ -59,25 +59,21 @@ void os_QueueKernelReset(void)
  * @param capacity 最大消息数量。
  * @return 初始化结果。
  */
-os_status_t os_QueueInit(
-    os_queue_t **out_queue,
-    void *buffer,
-    size_t item_size,
-    size_t capacity
+QueueHandle_t xQueueCreate(
+    uint32_t uxQueueLength,
+    uint32_t uxItemSize,
+    void *pucQueueStorage
 )
 {
-    if (out_queue == NULL) {
-        return OS_STATUS_INVALID_ARGUMENT;
-    }
-    *out_queue = NULL;
-
     if (!g_os_kernel.initialized || g_os_kernel.started) {
-        return OS_STATUS_BAD_STATE;
+        os_SetLastError(OS_STATUS_BAD_STATE);
+        return NULL;
     }
-    /* 除基本参数外，还要拒绝 item_size * capacity 的 size_t 溢出。 */
-    if ((buffer == NULL) || (item_size == 0U) || (capacity == 0U) ||
-        (item_size > (SIZE_MAX / capacity))) {
-        return OS_STATUS_INVALID_ARGUMENT;
+    /* 除基本参数外，还要拒绝 item_size * length 的 size_t 溢出。 */
+    if ((pucQueueStorage == NULL) || (uxItemSize == 0U) || (uxQueueLength == 0U) ||
+        (uxItemSize > (SIZE_MAX / uxQueueLength))) {
+        os_SetLastError(OS_STATUS_INVALID_ARGUMENT);
+        return NULL;
     }
 
     for (size_t index = 0U; index < OS_MAX_QUEUES; index++) {
@@ -85,32 +81,33 @@ os_status_t os_QueueInit(
 
         if (!queue->used) {
             queue->used = true;
-            queue->buffer = (uint8_t *)buffer;
-            queue->item_size = item_size;
-            queue->capacity = capacity;
+            queue->buffer = (uint8_t *)pucQueueStorage;
+            queue->item_size = uxItemSize;
+            queue->capacity = uxQueueLength;
             queue->head = 0U;
             queue->tail = 0U;
             queue->count = 0U;
             os_ListInit(&queue->send_waiters);
             os_ListInit(&queue->receive_waiters);
-            *out_queue = queue;
-            return OS_STATUS_OK;
+            os_SetLastError(OS_STATUS_OK);
+            return queue;
         }
     }
 
-    return OS_STATUS_LIMIT_REACHED;
+    os_SetLastError(OS_STATUS_LIMIT_REACHED);
+    return NULL;
 }
 
 /* 返回队列当前占用数量，无效对象返回 0。 */
-size_t os_QueueGetCount(const os_queue_t *queue)
+size_t uxQueueMessagesWaiting(QueueHandle_t xQueue)
 {
-    return os_QueueIsValid(queue) ? queue->count : 0U;
+    return os_QueueIsValid(xQueue) ? xQueue->count : 0U;
 }
 
 /* 返回队列固定容量，无效对象返回 0。 */
-size_t os_QueueGetCapacity(const os_queue_t *queue)
+size_t uxQueueCapacity(QueueHandle_t xQueue)
 {
-    return os_QueueIsValid(queue) ? queue->capacity : 0U;
+    return os_QueueIsValid(xQueue) ? xQueue->capacity : 0U;
 }
 
 /**

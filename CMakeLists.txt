@@ -91,7 +91,7 @@ if(WIN32)
         demos/preemption_demo.c
     )
 
-    target_link_libraries(preemption_demo PRIVATE mini_rtos_win32)
+    target_link_libraries(preemption_demo PRIVATE mini_rtos_core mini_rtos_win32)
 
     if(MSVC)
         target_compile_options(preemption_demo PRIVATE /W4 /WX)
@@ -109,7 +109,7 @@ if(WIN32)
         demos/ipc_demo.c
     )
 
-    target_link_libraries(ipc_demo PRIVATE mini_rtos_win32)
+    target_link_libraries(ipc_demo PRIVATE mini_rtos_core mini_rtos_win32)
 
     if(MSVC)
         target_compile_options(ipc_demo PRIVATE /W4 /WX)

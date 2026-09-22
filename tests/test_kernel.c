@@ -74,10 +74,10 @@ static void dummyTask(void *argument)
  */
 static bool testEmptyKernel(void)
 {
-    os_task_t *task = (os_task_t *)1;
+    TaskHandle_t task = (TaskHandle_t )1;
 
     memset(&g_os_kernel, 0, sizeof(g_os_kernel));
-    CHECK(os_TaskCreate(&task, "early", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_BAD_STATE);
+    CHECK((((task = xTaskCreate(dummyTask, "early", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_BAD_STATE);
     CHECK(task == NULL);
 
     resetTestStacks();
@@ -131,20 +131,20 @@ static bool testIntrusiveListOperations(void)
  */
 static bool testHighestPriorityStartsFirst(void)
 {
-    os_task_t *low;
-    os_task_t *medium;
-    os_task_t *high;
+    TaskHandle_t low;
+    TaskHandle_t medium;
+    TaskHandle_t high;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 6U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&medium, "medium", dummyTask, NULL, 3U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 6U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((medium = xTaskCreate(dummyTask, "medium", TEST_STACK_BYTES, NULL, 3U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     CHECK(os_SchedStart() == high);
-    CHECK(os_TaskGetState(high) == OS_TASK_RUNNING);
-    CHECK(os_TaskGetState(medium) == OS_TASK_READY);
-    CHECK(os_TaskGetState(low) == OS_TASK_READY);
+    CHECK(eTaskGetState(high) == OS_TASK_RUNNING);
+    CHECK(eTaskGetState(medium) == OS_TASK_READY);
+    CHECK(eTaskGetState(low) == OS_TASK_READY);
     CHECK(g_os_kernel.last_reason == OS_SWITCH_START);
     CHECK(os_KernelValidate());
     return true;
@@ -156,15 +156,15 @@ static bool testHighestPriorityStartsFirst(void)
  */
 static bool testEqualPriorityRoundRobin(void)
 {
-    os_task_t *task_a;
-    os_task_t *task_b;
-    os_task_t *task_c;
+    TaskHandle_t task_a;
+    TaskHandle_t task_b;
+    TaskHandle_t task_c;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&task_a, "task_a", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&task_b, "task_b", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&task_c, "task_c", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((task_a = xTaskCreate(dummyTask, "task_a", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((task_b = xTaskCreate(dummyTask, "task_b", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((task_c = xTaskCreate(dummyTask, "task_c", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     CHECK(os_SchedStart() == task_a);
     CHECK(os_SchedSchedule(OS_SWITCH_TIME_SLICE, true) == task_b);
@@ -181,12 +181,12 @@ static bool testEqualPriorityRoundRobin(void)
  */
 static bool testSingleTaskDoesNotSwitchToItself(void)
 {
-    os_task_t *only_task;
+    TaskHandle_t only_task;
     uint32_t switch_count;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&only_task, "only", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((only_task = xTaskCreate(dummyTask, "only", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == only_task);
     switch_count = g_os_kernel.switch_count;
 
@@ -202,13 +202,13 @@ static bool testSingleTaskDoesNotSwitchToItself(void)
  */
 static bool testHigherPriorityReadyTaskPreempts(void)
 {
-    os_task_t *low;
-    os_task_t *high;
+    TaskHandle_t low;
+    TaskHandle_t high;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
@@ -221,8 +221,8 @@ static bool testHigherPriorityReadyTaskPreempts(void)
     high->state = OS_TASK_READY;
     os_ReadyEnqueue(high);
     CHECK(os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false) == high);
-    CHECK(os_TaskGetState(low) == OS_TASK_READY);
-    CHECK(os_TaskGetState(high) == OS_TASK_RUNNING);
+    CHECK(eTaskGetState(low) == OS_TASK_READY);
+    CHECK(eTaskGetState(high) == OS_TASK_RUNNING);
     CHECK(g_os_kernel.last_from == low);
     CHECK(g_os_kernel.last_to == high);
     CHECK(g_os_kernel.last_reason == OS_SWITCH_HIGHER_PRIORITY_WAKEUP);
@@ -236,26 +236,26 @@ static bool testHigherPriorityReadyTaskPreempts(void)
  */
 static bool testDelayBlocksAndWakesTask(void)
 {
-    os_task_t *low;
-    os_task_t *high;
+    TaskHandle_t low;
+    TaskHandle_t high;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == high);
 
     CHECK(os_TimeDelayCurrent(3U) == low);
-    CHECK(os_TaskGetState(high) == OS_TASK_BLOCKED_DELAY);
+    CHECK(eTaskGetState(high) == OS_TASK_BLOCKED_DELAY);
     CHECK(os_KernelValidate());
 
     CHECK(os_TimeTick() == low);
     CHECK(os_TimeTick() == low);
-    CHECK(os_TaskGetState(high) == OS_TASK_BLOCKED_DELAY);
+    CHECK(eTaskGetState(high) == OS_TASK_BLOCKED_DELAY);
 
     CHECK(os_TimeTick() == high);
-    CHECK(os_TaskGetState(high) == OS_TASK_RUNNING);
-    CHECK(os_TaskGetState(low) == OS_TASK_READY);
+    CHECK(eTaskGetState(high) == OS_TASK_RUNNING);
+    CHECK(eTaskGetState(low) == OS_TASK_READY);
     CHECK(g_os_kernel.last_reason == OS_SWITCH_HIGHER_PRIORITY_WAKEUP);
     CHECK(os_KernelValidate());
     return true;
@@ -267,13 +267,13 @@ static bool testDelayBlocksAndWakesTask(void)
  */
 static bool testTickRotatesEqualPriorityTasks(void)
 {
-    os_task_t *task_a;
-    os_task_t *task_b;
+    TaskHandle_t task_a;
+    TaskHandle_t task_b;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&task_a, "task_a", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&task_b, "task_b", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((task_a = xTaskCreate(dummyTask, "task_a", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((task_b = xTaskCreate(dummyTask, "task_b", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == task_a);
 
     for (uint32_t tick = 1U; tick < OS_TIME_SLICE_TICKS; tick++) {
@@ -291,11 +291,11 @@ static bool testTickRotatesEqualPriorityTasks(void)
  */
 static bool testDelayWakeHandlesTickWrap(void)
 {
-    os_task_t *task;
+    TaskHandle_t task;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&task, "task", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((task = xTaskCreate(dummyTask, "task", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == task);
     g_os_kernel.tick = UINT32_MAX - 1U;
 
@@ -304,8 +304,8 @@ static bool testDelayWakeHandlesTickWrap(void)
     CHECK(os_TimeTick() == NULL);
     CHECK(os_TimeTick() == NULL);
     CHECK(os_TimeTick() == task);
-    CHECK(os_TaskGetState(task) == OS_TASK_RUNNING);
-    CHECK(os_TickGet() == 1U);
+    CHECK(eTaskGetState(task) == OS_TASK_RUNNING);
+    CHECK(xTaskGetTickCount() == 1U);
     CHECK(os_KernelValidate());
     return true;
 }
@@ -316,20 +316,20 @@ static bool testDelayWakeHandlesTickWrap(void)
  */
 static bool testLowerPriorityDoesNotReplaceCurrent(void)
 {
-    os_task_t *low;
-    os_task_t *high;
+    TaskHandle_t low;
+    TaskHandle_t high;
     uint32_t switch_count;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == high);
     switch_count = g_os_kernel.switch_count;
 
     CHECK(os_SchedSchedule(OS_SWITCH_TIME_SLICE, true) == high);
     CHECK(g_os_kernel.switch_count == switch_count);
-    CHECK(os_TaskGetState(low) == OS_TASK_READY);
+    CHECK(eTaskGetState(low) == OS_TASK_READY);
     CHECK(os_KernelValidate());
     return true;
 }
@@ -340,7 +340,7 @@ static bool testLowerPriorityDoesNotReplaceCurrent(void)
  */
 static bool testTaskCreationValidation(void)
 {
-    os_task_t *task = NULL;
+    TaskHandle_t task = NULL;
     char long_name[OS_TASK_NAME_MAX + 1U];
 
     memset(long_name, 'x', sizeof(long_name));
@@ -348,17 +348,16 @@ static bool testTaskCreationValidation(void)
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(NULL, "task", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, NULL, dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, "", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, long_name, dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, "task", NULL, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, "idle", dummyTask, NULL, 0U, testStack(), TEST_STACK_BYTES) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, "nostack", dummyTask, NULL, 1U, NULL, TEST_STACK_BYTES) ==
+    CHECK((((task = xTaskCreate(dummyTask, NULL, TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_INVALID_ARGUMENT);
+    CHECK((((task = xTaskCreate(dummyTask, "", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_INVALID_ARGUMENT);
+    CHECK((((task = xTaskCreate(dummyTask, long_name, TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_INVALID_ARGUMENT);
+    CHECK((((task = xTaskCreate(NULL, "task", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_INVALID_ARGUMENT);
+    CHECK((((task = xTaskCreate(dummyTask, "idle", TEST_STACK_BYTES, NULL, 0U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_INVALID_ARGUMENT);
+    CHECK((((task = xTaskCreate(dummyTask, "nostack", TEST_STACK_BYTES, NULL, 1U, NULL)) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, "smallstack", dummyTask, NULL, 1U, testStack(), 8U) ==
+    CHECK((((task = xTaskCreate(dummyTask, "smallstack", 8U, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_TaskCreate(&task, "too_high", dummyTask, NULL, OS_PRIORITY_COUNT, testStack(), TEST_STACK_BYTES) ==
+    CHECK((((task = xTaskCreate(dummyTask, "too_high", TEST_STACK_BYTES, NULL, OS_PRIORITY_COUNT, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_INVALID_ARGUMENT);
     CHECK(os_KernelValidate());
     return true;
@@ -370,8 +369,8 @@ static bool testTaskCreationValidation(void)
  */
 static bool testTaskLimitAndGetters(void)
 {
-    os_task_t *task = NULL;
-    os_task_t *last_task = NULL;
+    TaskHandle_t task = NULL;
+    TaskHandle_t last_task = NULL;
     char names[OS_MAX_TASKS][OS_TASK_NAME_MAX];
 
     resetTestStacks();
@@ -379,16 +378,16 @@ static bool testTaskLimitAndGetters(void)
 
     for (size_t index = 0U; index < OS_MAX_TASKS; index++) {
         (void)snprintf(names[index], sizeof(names[index]), "task_%u", (unsigned)index);
-        CHECK(os_TaskCreate(&task, names[index], dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+        CHECK((((task = xTaskCreate(dummyTask, names[index], TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
         last_task = task;
     }
 
-    CHECK(os_TaskCreate(&task, "overflow", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_LIMIT_REACHED);
+    CHECK((((task = xTaskCreate(dummyTask, "overflow", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_LIMIT_REACHED);
     CHECK(task == NULL);
-    CHECK(strcmp(os_TaskGetName(last_task), "task_7") == 0);
-    CHECK(os_TaskGetPriority(last_task) == 1U);
-    CHECK(os_TaskGetState(last_task) == OS_TASK_READY);
-    CHECK(os_TaskGetName(NULL) == NULL);
+    CHECK(strcmp(pcTaskGetName(last_task), "task_7") == 0);
+    CHECK(uxTaskPriorityGet(last_task) == 1U);
+    CHECK(eTaskGetState(last_task) == OS_TASK_READY);
+    CHECK(pcTaskGetName(NULL) == NULL);
     CHECK(os_KernelValidate());
     return true;
 }
@@ -399,11 +398,11 @@ static bool testTaskLimitAndGetters(void)
  */
 static bool testInvariantCheckerRejectsBadOwner(void)
 {
-    os_task_t *task;
+    TaskHandle_t task;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&task, "task", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((task = xTaskCreate(dummyTask, "task", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_KernelValidate());
 
     task->schedule_node.owner = NULL;
@@ -420,14 +419,14 @@ static bool testInvariantCheckerRejectsBadOwner(void)
  */
 static bool testCreationAfterStartIsRejected(void)
 {
-    os_task_t *first;
-    os_task_t *late = NULL;
+    TaskHandle_t first;
+    TaskHandle_t late = NULL;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_TaskCreate(&first, "first", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((first = xTaskCreate(dummyTask, "first", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == first);
-    CHECK(os_TaskCreate(&late, "late", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_BAD_STATE);
+    CHECK((((late = xTaskCreate(dummyTask, "late", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_BAD_STATE);
     CHECK(late == NULL);
     CHECK(os_KernelValidate());
     return true;
@@ -439,29 +438,29 @@ static bool testCreationAfterStartIsRejected(void)
  */
 static bool testSemaphoreBlocksAndWakesHighPriorityTask(void)
 {
-    os_task_t *low;
-    os_task_t *high;
-    os_sem_t *sem;
+    TaskHandle_t low;
+    TaskHandle_t high;
+    SemaphoreHandle_t sem;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_SemInit(&sem, 0U, 1U) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((sem = xSemaphoreCreateCounting(1U, 0U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == high);
 
     os_SemTakeCurrent(sem, OS_WAIT_FOREVER);
     CHECK(g_os_kernel.current == low);
     CHECK(high->state == OS_TASK_BLOCKED_OBJECT);
     CHECK(high->wait_kind == OS_WAIT_SEMAPHORE);
-    CHECK(os_SemGetCount(sem) == 0U);
+    CHECK(uxSemaphoreGetCount(sem) == 0U);
     CHECK(os_KernelValidate());
 
     os_SemGiveCurrent(sem);
     CHECK(g_os_kernel.current == high);
     CHECK(high->wait_result == OS_STATUS_OK);
     CHECK(low->wait_result == OS_STATUS_OK);
-    CHECK(os_SemGetCount(sem) == 0U);
+    CHECK(uxSemaphoreGetCount(sem) == 0U);
     CHECK(g_os_kernel.last_reason == OS_SWITCH_HIGHER_PRIORITY_WAKEUP);
     CHECK(os_KernelValidate());
     return true;
@@ -473,13 +472,13 @@ static bool testSemaphoreBlocksAndWakesHighPriorityTask(void)
  */
 static bool testSemaphoreTimeoutAndCountLimit(void)
 {
-    os_task_t *task;
-    os_sem_t *sem;
+    TaskHandle_t task;
+    SemaphoreHandle_t sem;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_SemInit(&sem, 0U, 1U) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&task, "waiter", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((sem = xSemaphoreCreateCounting(1U, 0U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((task = xTaskCreate(dummyTask, "waiter", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == task);
 
     os_SemTakeCurrent(sem, 3U);
@@ -492,10 +491,10 @@ static bool testSemaphoreTimeoutAndCountLimit(void)
 
     os_SemGiveCurrent(sem);
     CHECK(task->wait_result == OS_STATUS_OK);
-    CHECK(os_SemGetCount(sem) == 1U);
+    CHECK(uxSemaphoreGetCount(sem) == 1U);
     os_SemGiveCurrent(sem);
     CHECK(task->wait_result == OS_STATUS_LIMIT_REACHED);
-    CHECK(os_SemGetCount(sem) == 1U);
+    CHECK(uxSemaphoreGetCount(sem) == 1U);
     CHECK(os_KernelValidate());
     return true;
 }
@@ -509,28 +508,28 @@ static bool testQueueDirectHandoffToWaitingReceiver(void)
     int storage[2] = {0};
     int received = 0;
     const int sent = 42;
-    os_task_t *low;
-    os_task_t *high;
-    os_queue_t *queue;
+    TaskHandle_t low;
+    TaskHandle_t high;
+    QueueHandle_t queue;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_QueueInit(&queue, storage, sizeof(storage[0]), 2U) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "producer", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "consumer", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((queue = xQueueCreate(2U, sizeof(storage[0]), storage)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "producer", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "consumer", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == high);
 
     os_QueueReceiveCurrent(queue, &received, OS_WAIT_FOREVER);
     CHECK(g_os_kernel.current == low);
     CHECK(high->wait_kind == OS_WAIT_QUEUE_RECEIVE);
-    CHECK(os_QueueGetCount(queue) == 0U);
+    CHECK(uxQueueMessagesWaiting(queue) == 0U);
     CHECK(os_KernelValidate());
 
     os_QueueSendCurrent(queue, &sent, OS_WAIT_FOREVER);
     CHECK(g_os_kernel.current == high);
     CHECK(received == sent);
     CHECK(high->wait_result == OS_STATUS_OK);
-    CHECK(os_QueueGetCount(queue) == 0U);
+    CHECK(uxQueueMessagesWaiting(queue) == 0U);
     CHECK(os_KernelValidate());
     return true;
 }
@@ -546,20 +545,20 @@ static bool testQueueFullSenderRefillsFreedSlot(void)
     int queued = 0;
     const int first = 11;
     const int second = 22;
-    os_task_t *low;
-    os_task_t *high;
-    os_queue_t *queue;
+    TaskHandle_t low;
+    TaskHandle_t high;
+    QueueHandle_t queue;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_QueueInit(&queue, storage, sizeof(storage[0]), 1U) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "consumer", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "producer", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((queue = xQueueCreate(1U, sizeof(storage[0]), storage)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "consumer", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "producer", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == high);
 
     os_QueueSendCurrent(queue, &first, 0U);
     CHECK(high->wait_result == OS_STATUS_OK);
-    CHECK(os_QueueGetCount(queue) == 1U);
+    CHECK(uxQueueMessagesWaiting(queue) == 1U);
     os_QueueSendCurrent(queue, &second, OS_WAIT_FOREVER);
     CHECK(g_os_kernel.current == low);
     CHECK(high->wait_kind == OS_WAIT_QUEUE_SEND);
@@ -569,7 +568,7 @@ static bool testQueueFullSenderRefillsFreedSlot(void)
     CHECK(received == first);
     CHECK(g_os_kernel.current == high);
     CHECK(high->wait_result == OS_STATUS_OK);
-    CHECK(os_QueueGetCount(queue) == 1U);
+    CHECK(uxQueueMessagesWaiting(queue) == 1U);
     CHECK(os_QueueSnapshot(queue, &queued, 1U) == 1U);
     CHECK(queued == second);
     CHECK(os_KernelValidate());
@@ -586,13 +585,13 @@ static bool testQueueSendAndReceiveTimeouts(void)
     int received = 0;
     const int first = 7;
     const int second = 9;
-    os_task_t *task;
-    os_queue_t *queue;
+    TaskHandle_t task;
+    QueueHandle_t queue;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_QueueInit(&queue, storage, sizeof(storage[0]), 1U) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&task, "queue_user", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((queue = xQueueCreate(1U, sizeof(storage[0]), storage)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((task = xTaskCreate(dummyTask, "queue_user", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == task);
 
     os_QueueReceiveCurrent(queue, &received, 2U);
@@ -608,12 +607,12 @@ static bool testQueueSendAndReceiveTimeouts(void)
     CHECK(os_TimeTick() == NULL);
     CHECK(os_TimeTick() == task);
     CHECK(task->wait_result == OS_STATUS_TIMEOUT);
-    CHECK(os_QueueGetCount(queue) == 1U);
+    CHECK(uxQueueMessagesWaiting(queue) == 1U);
 
     os_QueueReceiveCurrent(queue, &received, 0U);
     CHECK(task->wait_result == OS_STATUS_OK);
     CHECK(received == first);
-    CHECK(os_QueueGetCount(queue) == 0U);
+    CHECK(uxQueueMessagesWaiting(queue) == 0U);
     CHECK(os_KernelValidate());
     return true;
 }
@@ -625,40 +624,27 @@ static bool testQueueSendAndReceiveTimeouts(void)
 static bool testIpcInitializationValidationAndLimits(void)
 {
     int storage[OS_MAX_QUEUES + 1U] = {0};
-    os_sem_t *sem = (os_sem_t *)1;
-    os_queue_t *queue = (os_queue_t *)1;
+    SemaphoreHandle_t sem = (SemaphoreHandle_t )1;
+    QueueHandle_t queue = (QueueHandle_t )1;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_SemInit(NULL, 0U, 1U) == OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_SemInit(&sem, 2U, 1U) == OS_STATUS_INVALID_ARGUMENT);
+    CHECK((((sem = xSemaphoreCreateCounting(1U, 2U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_INVALID_ARGUMENT);
     CHECK(sem == NULL);
-    CHECK(os_QueueInit(NULL, storage, sizeof(storage[0]), 1U) ==
-          OS_STATUS_INVALID_ARGUMENT);
-    CHECK(os_QueueInit(&queue, NULL, sizeof(storage[0]), 1U) ==
+    CHECK((((queue = xQueueCreate(1U, sizeof(storage[0]), NULL)) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_INVALID_ARGUMENT);
     CHECK(queue == NULL);
 
     for (size_t index = 0U; index < OS_MAX_SEMAPHORES; index++) {
-        CHECK(os_SemInit(&sem, 0U, 1U) == OS_STATUS_OK);
+        CHECK((((sem = xSemaphoreCreateCounting(1U, 0U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     }
-    CHECK(os_SemInit(&sem, 0U, 1U) == OS_STATUS_LIMIT_REACHED);
+    CHECK((((sem = xSemaphoreCreateCounting(1U, 0U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_LIMIT_REACHED);
     CHECK(sem == NULL);
 
     for (size_t index = 0U; index < OS_MAX_QUEUES; index++) {
-        CHECK(os_QueueInit(
-                  &queue,
-                  &storage[index],
-                  sizeof(storage[index]),
-                  1U
-              ) == OS_STATUS_OK);
+        CHECK((((queue = xQueueCreate(1U, sizeof(storage[index]), &storage[index])) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     }
-    CHECK(os_QueueInit(
-              &queue,
-              &storage[OS_MAX_QUEUES],
-              sizeof(storage[0]),
-              1U
-          ) == OS_STATUS_LIMIT_REACHED);
+    CHECK((((queue = xQueueCreate(1U, sizeof(storage[0]), &storage[OS_MAX_QUEUES])) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_LIMIT_REACHED);
     CHECK(queue == NULL);
     CHECK(os_KernelValidate());
     return true;
@@ -670,15 +656,15 @@ static bool testIpcInitializationValidationAndLimits(void)
  */
 static bool testMutexOwnershipAndNonRecursiveRule(void)
 {
-    os_task_t *owner;
-    os_task_t *intruder;
-    os_mutex_t *mutex;
+    TaskHandle_t owner;
+    TaskHandle_t intruder;
+    MutexHandle_t mutex;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_MutexInit(&mutex) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&owner, "owner", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&intruder, "intruder", dummyTask, NULL, 2U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((owner = xTaskCreate(dummyTask, "owner", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((intruder = xTaskCreate(dummyTask, "intruder", TEST_STACK_BYTES, NULL, 2U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     CHECK(os_SchedStart() == owner);
 
     os_MutexLockCurrent(mutex, OS_WAIT_FOREVER);
@@ -708,17 +694,17 @@ static bool testMutexOwnershipAndNonRecursiveRule(void)
  */
 static bool testMutexPriorityInheritancePreventsInversion(void)
 {
-    os_task_t *low;
-    os_task_t *medium;
-    os_task_t *high;
-    os_mutex_t *mutex;
+    TaskHandle_t low;
+    TaskHandle_t medium;
+    TaskHandle_t high;
+    MutexHandle_t mutex;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_MutexInit(&mutex) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&medium, "medium", dummyTask, NULL, 3U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((medium = xTaskCreate(dummyTask, "medium", TEST_STACK_BYTES, NULL, 3U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     CHECK(os_ReadyRemove(medium));
     medium->state = OS_TASK_BLOCKED_DELAY;
@@ -768,15 +754,15 @@ static bool testMutexPriorityInheritancePreventsInversion(void)
  */
 static bool testMutexTimeoutRestoresOwnerPriority(void)
 {
-    os_task_t *low;
-    os_task_t *high;
-    os_mutex_t *mutex;
+    TaskHandle_t low;
+    TaskHandle_t high;
+    MutexHandle_t mutex;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_MutexInit(&mutex) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
@@ -812,15 +798,14 @@ static bool testMutexTimeoutRestoresOwnerPriority(void)
  */
 static bool testMutexInitializationLimit(void)
 {
-    os_mutex_t *mutex = (os_mutex_t *)1;
+    MutexHandle_t mutex = (MutexHandle_t )1;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_MutexInit(NULL) == OS_STATUS_INVALID_ARGUMENT);
     for (size_t index = 0U; index < OS_MAX_MUTEXES; index++) {
-        CHECK(os_MutexInit(&mutex) == OS_STATUS_OK);
+        CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     }
-    CHECK(os_MutexInit(&mutex) == OS_STATUS_LIMIT_REACHED);
+    CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_LIMIT_REACHED);
     CHECK(mutex == NULL);
     CHECK(os_KernelValidate());
     return true;
@@ -832,15 +817,15 @@ static bool testMutexInitializationLimit(void)
  */
 static bool testTaskExitTransfersOwnedMutex(void)
 {
-    os_task_t *low;
-    os_task_t *high;
-    os_mutex_t *mutex;
+    TaskHandle_t low;
+    TaskHandle_t high;
+    MutexHandle_t mutex;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_MutexInit(&mutex) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) == OS_STATUS_OK);
+    CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
@@ -874,16 +859,16 @@ static bool testTaskExitTransfersOwnedMutex(void)
  */
 static bool testSemGiveFromIsrAndCriticalDefer(void)
 {
-    os_sem_t *sem;
-    os_task_t *low;
-    os_task_t *high;
+    SemaphoreHandle_t sem;
+    TaskHandle_t low;
+    TaskHandle_t high;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_SemInit(&sem, 0U, 1U) == OS_STATUS_OK);
-    CHECK(os_TaskCreate(&low, "low", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) ==
+    CHECK((((sem = xSemaphoreCreateCounting(1U, 0U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((low = xTaskCreate(dummyTask, "low", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_OK);
-    CHECK(os_TaskCreate(&high, "high", dummyTask, NULL, 5U, testStack(), TEST_STACK_BYTES) ==
+    CHECK((((high = xTaskCreate(dummyTask, "high", TEST_STACK_BYTES, NULL, 5U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_OK);
     CHECK(os_SchedStart() == high);
 
@@ -892,7 +877,7 @@ static bool testSemGiveFromIsrAndCriticalDefer(void)
     CHECK(high->state == OS_TASK_BLOCKED_OBJECT);
 
     os_EnterCritical();
-    CHECK(os_SemGiveFromISR(sem) == OS_STATUS_OK);
+    CHECK(xSemaphoreGiveFromISR(sem) == OS_STATUS_OK);
     CHECK(g_os_kernel.sched_pending);
     CHECK(g_os_kernel.current == low);
     CHECK(high->state == OS_TASK_READY);
@@ -908,7 +893,7 @@ static bool testSemGiveFromIsrAndCriticalDefer(void)
  */
 static bool testEnsureIdleTask(void)
 {
-    os_task_t *task = NULL;
+    TaskHandle_t task = NULL;
     char names[OS_MAX_TASKS][OS_TASK_NAME_MAX];
 
     resetTestStacks();
@@ -920,17 +905,9 @@ static bool testEnsureIdleTask(void)
 
     for (size_t index = 0U; index < (OS_MAX_TASKS - 1U); index++) {
         (void)snprintf(names[index], sizeof(names[index]), "u_%u", (unsigned)index);
-        CHECK(os_TaskCreate(
-                  &task,
-                  names[index],
-                  dummyTask,
-                  NULL,
-                  1U,
-                  testStack(),
-                  TEST_STACK_BYTES
-              ) == OS_STATUS_OK);
+        CHECK((((task = xTaskCreate(dummyTask, names[index], TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     }
-    CHECK(os_TaskCreate(&task, "overflow", dummyTask, NULL, 1U, testStack(), TEST_STACK_BYTES) ==
+    CHECK((((task = xTaskCreate(dummyTask, "overflow", TEST_STACK_BYTES, NULL, 1U, testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_LIMIT_REACHED);
     CHECK(os_EnsureIdleTask() == OS_STATUS_OK);
     CHECK(os_KernelValidate());
@@ -953,32 +930,24 @@ static bool testRandomizedStateTransitionsAcrossTickWrap(void)
     int queue_storage[3] = {0};
     int send_values[OS_MAX_TASKS] = {0};
     int receive_values[OS_MAX_TASKS] = {0};
-    os_sem_t *sem;
-    os_queue_t *queue;
-    os_mutex_t *mutex;
-    os_task_t *task;
+    SemaphoreHandle_t sem;
+    QueueHandle_t queue;
+    MutexHandle_t mutex;
+    TaskHandle_t task;
     uint32_t random_state = 0xC0FFEEU;
 
     resetTestStacks();
     os_Init();
-    CHECK(os_SemInit(&sem, 1U, 2U) == OS_STATUS_OK);
-    CHECK(os_QueueInit(&queue, queue_storage, sizeof(queue_storage[0]), 3U) ==
+    CHECK((((sem = xSemaphoreCreateCounting(2U, 1U)) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
+    CHECK((((queue = xQueueCreate(3U, sizeof(queue_storage[0]), queue_storage)) != NULL) ? OS_STATUS_OK : osGetLastError()) ==
           OS_STATUS_OK);
-    CHECK(os_MutexInit(&mutex) == OS_STATUS_OK);
+    CHECK((((mutex = xMutexCreate()) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
 
     for (size_t index = 0U; index < 5U; index++) {
         char name[OS_TASK_NAME_MAX];
 
         (void)snprintf(name, sizeof(name), "stress_%u", (unsigned)index);
-        CHECK(os_TaskCreate(
-                  &task,
-                  name,
-                  dummyTask,
-                  NULL,
-                  (uint8_t)((index % 5U) + 1U),
-                  testStack(),
-                  TEST_STACK_BYTES
-              ) == OS_STATUS_OK);
+        CHECK((((task = xTaskCreate(dummyTask, name, TEST_STACK_BYTES, NULL, (uint8_t)((index % 5U) + 1U), testStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) == OS_STATUS_OK);
     }
 
     CHECK(os_SchedStart() != NULL);
@@ -986,7 +955,7 @@ static bool testRandomizedStateTransitionsAcrossTickWrap(void)
 
     /* 固定种子覆盖让出、延时、IPC、互斥量和空闲 tick，失败可稳定复现。 */
     for (size_t step = 0U; step < 10000U; step++) {
-        os_task_t *current = g_os_kernel.current;
+        TaskHandle_t current = g_os_kernel.current;
         const uint32_t random_value = nextRandom(&random_state);
 
         if (current == NULL) {
@@ -1041,7 +1010,7 @@ static bool testRandomizedStateTransitionsAcrossTickWrap(void)
         CHECK(os_KernelValidate());
     }
 
-    CHECK(os_TickGet() < 10000U);
+    CHECK(xTaskGetTickCount() < 10000U);
     CHECK(os_KernelValidate());
     return true;
 }

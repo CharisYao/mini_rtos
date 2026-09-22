@@ -329,7 +329,7 @@ static bool os_PortSuspendCurrent(void)
 /* 按观察周期刷新面板，并在有限演示达到 run_ticks 时请求停止。 */
 static void os_PortObserveTick(void)
 {
-    const uint32_t tick = os_TickGet();
+    const uint32_t tick = xTaskGetTickCount();
 
     if ((g_observer != NULL) && ((tick % OS_OBSERVER_PERIOD_TICKS) == 0U)) {
         os_runtime_snapshot_t snapshot;
@@ -452,7 +452,6 @@ static bool os_PortProcessRequest(void)
     case OS_PORT_REQ_EXIT:
         (void)os_SchedTerminateCurrent();
         break;
-    case OS_PORT_REQUEST_NONE:
     default:
         return false;
     }

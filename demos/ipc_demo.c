@@ -39,11 +39,11 @@ static void *demoAllocStack(void)
 
 /* 温度生产、处理和报警流水线的共享演示上下文 */
 typedef struct {
-    os_task_t *sensorTask;        /* P2 温度生产者。 */
-    os_task_t *processTask;       /* P1 慢速消费者。 */
-    os_task_t *alarmTask;         /* P3 信号量等待者。 */
-    os_queue_t *sample_queue;     /* 容量为 6 的温度消息队列。 */
-    os_sem_t *alarm_sem;          /* 高温事件计数信号量。 */
+    TaskHandle_t sensorTask;        /* P2 温度生产者。 */
+    TaskHandle_t processTask;       /* P1 慢速消费者。 */
+    TaskHandle_t alarmTask;         /* P3 信号量等待者。 */
+    QueueHandle_t sample_queue;     /* 容量为 6 的温度消息队列。 */
+    SemaphoreHandle_t alarm_sem;          /* 高温事件计数信号量。 */
     bool compact;                 /* 是否只输出关键状态变化。 */
     bool saw_empty_wait;          /* 是否观察到消费者等待空队列。 */
     bool saw_full_wait;           /* 是否观察到生产者等待满队列。 */
@@ -66,10 +66,10 @@ static atomic_bool g_alarm_active;
  */
 static void workForTicks(uint32_t duration_ticks)
 {
-    const uint32_t start_tick = os_TickGet();
+    const uint32_t start_tick = xTaskGetTickCount();
     volatile uint32_t work = 0x13579BDFU;
 
-    while (os_IsRunning() && ((os_TickGet() - start_tick) < duration_ticks)) {
+    while (os_IsRunning() && ((xTaskGetTickCount() - start_tick) < duration_ticks)) {
         work = (work * 1664525U) + 1013904223U;
     }
 }
@@ -87,13 +87,13 @@ static void sensorTask(void *argument)
     size_t sample_index = 0U;
 
     /* 先延时，让消费者有机会演示空队列接收阻塞。 */
-    os_Delay(15U);
+    vTaskDelay(15U);
 
     while (os_IsRunning()) {
         const int temperature =
             temperatures[sample_index % (sizeof(temperatures) / sizeof(temperatures[0]))];
         const os_status_t status =
-            os_QueueSend(demo->sample_queue, &temperature, OS_WAIT_FOREVER);
+            xQueueSend(demo->sample_queue, &temperature, OS_WAIT_FOREVER);
 
         if (!os_IsRunning()) {
             break;
@@ -105,7 +105,7 @@ static void sensorTask(void *argument)
         atomic_store_explicit(&g_last_sent, temperature, memory_order_relaxed);
         atomic_fetch_add_explicit(&g_samples_sent, 1U, memory_order_relaxed);
         sample_index++;
-        os_Delay(12U);
+        vTaskDelay(12U);
     }
 }
 
@@ -120,7 +120,7 @@ static void processTask(void *argument)
     while (os_IsRunning()) {
         int temperature = 0;
         const os_status_t status =
-            os_QueueReceive(demo->sample_queue, &temperature, OS_WAIT_FOREVER);
+            xQueueReceive(demo->sample_queue, &temperature, OS_WAIT_FOREVER);
 
         if (!os_IsRunning()) {
             break;
@@ -138,7 +138,7 @@ static void processTask(void *argument)
         atomic_fetch_add_explicit(&g_samples_processed, 1U, memory_order_relaxed);
 
         if (temperature >= ALARM_TEMPERATURE) {
-            (void)os_SemGive(demo->alarm_sem);
+            (void)xSemaphoreGive(demo->alarm_sem);
         }
     }
 }
@@ -152,7 +152,7 @@ static void alarmTask(void *argument)
     demo_context_t *demo = (demo_context_t *)argument;
 
     while (os_IsRunning()) {
-        const os_status_t status = os_SemTake(demo->alarm_sem, OS_WAIT_FOREVER);
+        const os_status_t status = xSemaphoreTake(demo->alarm_sem, OS_WAIT_FOREVER);
 
         if (!os_IsRunning()) {
             break;
@@ -171,7 +171,7 @@ static void alarmTask(void *argument)
 /* 将没有 RUNNING 任务的快照显示为 IDLE。 */
 static const char *taskNameOrIdle(const os_task_t *task)
 {
-    return (task != NULL) ? os_TaskGetName(task) : "IDLE";
+    return (task != NULL) ? pcTaskGetName(task) : "IDLE";
 }
 
 /**
@@ -182,11 +182,11 @@ static const char *taskNameOrIdle(const os_task_t *task)
 static void observeBehaviors(demo_context_t *demo, size_t queue_count)
 {
     if ((queue_count == 0U) &&
-        (os_TaskGetState(demo->processTask) == OS_TASK_BLOCKED_OBJECT)) {
+        (eTaskGetState(demo->processTask) == OS_TASK_BLOCKED_OBJECT)) {
         demo->saw_empty_wait = true;
     }
     if ((queue_count == SAMPLE_QUEUE_CAPACITY) &&
-        (os_TaskGetState(demo->sensorTask) == OS_TASK_BLOCKED_OBJECT)) {
+        (eTaskGetState(demo->sensorTask) == OS_TASK_BLOCKED_OBJECT)) {
         demo->saw_full_wait = true;
     }
     if (atomic_load_explicit(&g_alarm_active, memory_order_relaxed)) {
@@ -249,14 +249,14 @@ static void renderDashboard(const os_runtime_snapshot_t *snapshot, void *context
     printf("================ miniRTOS IPC PIPELINE ================\n");
     printf("Tick/Current : %-5u %s (P%u)\n", snapshot->tick,
            taskNameOrIdle(snapshot->current),
-           os_TaskGetPriority(snapshot->current));
+           uxTaskPriorityGet(snapshot->current));
     printf("Last switch  : %s -> %s (%s)\n\n",
            taskNameOrIdle(snapshot->last_from),
            taskNameOrIdle(snapshot->last_to),
            os_SwitchReasonName(snapshot->last_reason));
 
     printf("Sensor P2    : %-14s sent=%-3u last=%d C\n",
-           os_TaskStateName(os_TaskGetState(demo->sensorTask)),
+           os_TaskStateName(eTaskGetState(demo->sensorTask)),
            atomic_load_explicit(&g_samples_sent, memory_order_relaxed),
            atomic_load_explicit(&g_last_sent, memory_order_relaxed));
     printf("                | produces every 12 ticks\n");
@@ -267,12 +267,12 @@ static void renderDashboard(const os_runtime_snapshot_t *snapshot, void *context
     printf("                | bounded buffer\n");
     printf("                v\n");
     printf("Processor P1 : %-14s done=%-3u last=%d C\n\n",
-           os_TaskStateName(os_TaskGetState(demo->processTask)),
+           os_TaskStateName(eTaskGetState(demo->processTask)),
            atomic_load_explicit(&g_samples_processed, memory_order_relaxed),
            atomic_load_explicit(&g_last_processed, memory_order_relaxed));
 
     printf("Alarm P3     : %-14s runs=%-3u %s\n",
-           os_TaskStateName(os_TaskGetState(demo->alarmTask)),
+           os_TaskStateName(eTaskGetState(demo->alarmTask)),
            atomic_load_explicit(&g_alarm_runs, memory_order_relaxed),
            atomic_load_explicit(&g_alarm_active, memory_order_relaxed)
                ? "!!! HANDLING HIGH TEMPERATURE !!!"
@@ -308,40 +308,11 @@ int main(int argc, char **argv)
     }
 
     os_Init();
-    if ((os_QueueInit(
-             &demo.sample_queue,
-             queue_storage,
-             sizeof(queue_storage[0]),
-             SAMPLE_QUEUE_CAPACITY
-         ) != OS_STATUS_OK) ||
-        (os_SemInit(&demo.alarm_sem, 0U, 1U) != OS_STATUS_OK) ||
-        (os_TaskCreate(
-             &demo.sensorTask,
-             "SensorTask",
-             sensorTask,
-             &demo,
-             2U
-         ,
-             demoAllocStack(),
-             DEMO_STACK_BYTES) != OS_STATUS_OK) ||
-        (os_TaskCreate(
-             &demo.processTask,
-             "ProcessTask",
-             processTask,
-             &demo,
-             1U
-         ,
-             demoAllocStack(),
-             DEMO_STACK_BYTES) != OS_STATUS_OK) ||
-        (os_TaskCreate(
-             &demo.alarmTask,
-             "AlarmTask",
-             alarmTask,
-             &demo,
-             3U
-         ,
-             demoAllocStack(),
-             DEMO_STACK_BYTES) != OS_STATUS_OK)) {
+    if (((((demo.sample_queue = xQueueCreate(SAMPLE_QUEUE_CAPACITY, sizeof(queue_storage[0]), queue_storage)) != NULL) ? OS_STATUS_OK : osGetLastError()) != OS_STATUS_OK) ||
+        ((((demo.alarm_sem = xSemaphoreCreateCounting(1U, 0U)) != NULL) ? OS_STATUS_OK : osGetLastError()) != OS_STATUS_OK) ||
+        ((((demo.sensorTask = xTaskCreate(sensorTask, "SensorTask", DEMO_STACK_BYTES, &demo, 2U, demoAllocStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) != OS_STATUS_OK) ||
+        ((((demo.processTask = xTaskCreate(processTask, "ProcessTask", DEMO_STACK_BYTES, &demo, 1U, demoAllocStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) != OS_STATUS_OK) ||
+        ((((demo.alarmTask = xTaskCreate(alarmTask, "AlarmTask", DEMO_STACK_BYTES, &demo, 3U, demoAllocStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) != OS_STATUS_OK)) {
         fprintf(stderr, "failed to initialize IPC demo\n");
         return 1;
     }

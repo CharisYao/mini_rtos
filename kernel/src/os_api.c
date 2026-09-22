@@ -15,6 +15,18 @@
 #include "os_sem_internal.h"
 #include "os_port.h"
 
+static os_status_t g_last_error = OS_STATUS_OK;
+
+void os_SetLastError(os_status_t status)
+{
+    g_last_error = status;
+}
+
+os_status_t osGetLastError(void)
+{
+    return g_last_error;
+}
+
 os_status_t os_Start(uint32_t run_ticks)
 {
     os_status_t status = os_EnsureIdleTask();
@@ -26,19 +38,19 @@ os_status_t os_Start(uint32_t run_ticks)
     return os_port_start_scheduler(run_ticks);
 }
 
-void os_Yield(void)
+void vTaskYield(void)
 {
     (void)os_port_task_request(OS_PORT_REQ_YIELD, 0U, NULL, NULL);
 }
 
-void os_Delay(uint32_t ticks)
+void vTaskDelay(TickType_t xTicksToDelay)
 {
-    if (ticks == 0U) {
-        os_Yield();
+    if (xTicksToDelay == 0U) {
+        vTaskYield();
         return;
     }
 
-    (void)os_port_task_request(OS_PORT_REQ_DELAY, ticks, NULL, NULL);
+    (void)os_port_task_request(OS_PORT_REQ_DELAY, xTicksToDelay, NULL, NULL);
 }
 
 bool os_IsRunning(void)
@@ -51,28 +63,28 @@ void os_SetObserver(os_observer_t observer, void *context)
     os_port_set_observer(observer, context);
 }
 
-os_status_t os_SemTake(os_sem_t *sem, uint32_t timeout_ticks)
+os_status_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xTicksToWait)
 {
     return os_port_task_request(
         OS_PORT_REQ_SEM_TAKE,
-        timeout_ticks,
-        sem,
+        xTicksToWait,
+        xSemaphore,
         NULL
     );
 }
 
-os_status_t os_SemGive(os_sem_t *sem)
+os_status_t xSemaphoreGive(SemaphoreHandle_t xSemaphore)
 {
-    return os_port_task_request(OS_PORT_REQ_SEM_GIVE, 0U, sem, NULL);
+    return os_port_task_request(OS_PORT_REQ_SEM_GIVE, 0U, xSemaphore, NULL);
 }
 
-os_status_t os_SemGiveFromISR(os_sem_t *sem)
+os_status_t xSemaphoreGiveFromISR(SemaphoreHandle_t xSemaphore)
 {
     os_task_t *woken = NULL;
     os_status_t status;
 
     os_EnterCritical();
-    status = os_SemGiveFromIsrContext(sem, &woken);
+    status = os_SemGiveFromIsrContext(xSemaphore, &woken);
     if (woken != NULL) {
         os_WaitMaybePreempt(woken);
     }
@@ -80,45 +92,45 @@ os_status_t os_SemGiveFromISR(os_sem_t *sem)
     return status;
 }
 
-os_status_t os_QueueSend(
-    os_queue_t *queue,
-    const void *item,
-    uint32_t timeout_ticks
+os_status_t xQueueSend(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    TickType_t xTicksToWait
 )
 {
     return os_port_task_request(
         OS_PORT_REQ_QUEUE_SEND,
-        timeout_ticks,
-        queue,
-        (void *)item
+        xTicksToWait,
+        xQueue,
+        (void *)pvItemToQueue
     );
 }
 
-os_status_t os_QueueReceive(
-    os_queue_t *queue,
-    void *out_item,
-    uint32_t timeout_ticks
+os_status_t xQueueReceive(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    TickType_t xTicksToWait
 )
 {
     return os_port_task_request(
         OS_PORT_REQ_QUEUE_RECEIVE,
-        timeout_ticks,
-        queue,
-        out_item
+        xTicksToWait,
+        xQueue,
+        pvBuffer
     );
 }
 
-os_status_t os_MutexLock(os_mutex_t *mutex, uint32_t timeout_ticks)
+os_status_t xMutexLock(MutexHandle_t xMutex, TickType_t xTicksToWait)
 {
     return os_port_task_request(
         OS_PORT_REQ_MUTEX_LOCK,
-        timeout_ticks,
-        mutex,
+        xTicksToWait,
+        xMutex,
         NULL
     );
 }
 
-os_status_t os_MutexUnlock(os_mutex_t *mutex)
+os_status_t xMutexUnlock(MutexHandle_t xMutex)
 {
-    return os_port_task_request(OS_PORT_REQ_MUTEX_UNLOCK, 0U, mutex, NULL);
+    return os_port_task_request(OS_PORT_REQ_MUTEX_UNLOCK, 0U, xMutex, NULL);
 }

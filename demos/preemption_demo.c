@@ -5,8 +5,8 @@
  * @brief 通过动态控制台面板展示同优先级时间片轮转和高优先级任务抢占。
  *
  * @details
- * CarTask 和 ComputeTask 都是 P1 CPU 密集任务，它们在循环中故意不调用 os_Yield()
- * 或 os_Delay()。两者仍能交替推进，说明周期 tick 可以强制结束当前时间片并让同级
+ * CarTask 和 ComputeTask 都是 P1 CPU 密集任务，它们在循环中故意不调用 vTaskYield()
+ * 或 vTaskDelay()。两者仍能交替推进，说明周期 tick 可以强制结束当前时间片并让同级
  * 任务轮转。EmergencyTask 为 P3，平时通过延时进入阻塞态，到期后立即抢占 P1 任务，
  * 完成紧急处理后再次延时。
  *
@@ -40,9 +40,9 @@ static void *demoAllocStack(void)
 
 /* 抢占演示使用的任务句柄和紧凑输出状态 */
 typedef struct {
-    os_task_t *carTask;           /* 文本小车任务。 */
-    os_task_t *computeTask;       /* 持续计算任务。 */
-    os_task_t *emergencyTask;     /* 周期唤醒的高优先级任务。 */
+    TaskHandle_t carTask;           /* 文本小车任务。 */
+    TaskHandle_t computeTask;       /* 持续计算任务。 */
+    TaskHandle_t emergencyTask;     /* 周期唤醒的高优先级任务。 */
     bool compact;                 /* 是否只打印切换轨迹。 */
     uint32_t last_compact_switch; /* 紧凑模式已显示的切换计数。 */
 } demo_context_t;
@@ -60,7 +60,7 @@ static atomic_uint g_emergency_runs;
  * @brief 持续推进文本小车位置的 P1 CPU 密集任务。
  * @param argument 本演示不使用任务参数。
  *
- * 任务故意不调用 os_Yield() 或 os_Delay()，用于证明时间片能够异步抢占。
+ * 任务故意不调用 vTaskYield() 或 vTaskDelay()，用于证明时间片能够异步抢占。
  */
 static void carTask(void *argument)
 {
@@ -120,18 +120,18 @@ static void emergencyTask(void *argument)
         uint32_t start_tick;
 
         /* 延时期间处于 BLOCKED_DELAY，不参与 CPU 竞争。 */
-        os_Delay(250U);
+        vTaskDelay(250U);
         if (!os_IsRunning()) {
             break;
         }
 
         atomic_store_explicit(&g_emergency_active, 1U, memory_order_relaxed);
         atomic_fetch_add_explicit(&g_emergency_runs, 1U, memory_order_relaxed);
-        start_tick = os_TickGet();
+        start_tick = xTaskGetTickCount();
 
         /* 持续运行 60 tick，面板可观察低优先级任务在此期间停止推进。 */
         while (os_IsRunning()) {
-            const uint32_t elapsed = os_TickGet() - start_tick;
+            const uint32_t elapsed = xTaskGetTickCount() - start_tick;
 
             if (elapsed >= 60U) {
                 break;
@@ -154,7 +154,7 @@ static void emergencyTask(void *argument)
 /* 将空闲状态的 NULL current 显示为 IDLE。 */
 static const char *taskNameOrIdle(const os_task_t *task)
 {
-    return (task != NULL) ? os_TaskGetName(task) : "IDLE";
+    return (task != NULL) ? pcTaskGetName(task) : "IDLE";
 }
 
 /**
@@ -223,7 +223,7 @@ static void renderDashboard(const os_runtime_snapshot_t *snapshot, void *context
     printf(
         "Current     : %s (P%u)\n",
         taskNameOrIdle(snapshot->current),
-        os_TaskGetPriority(snapshot->current)
+        uxTaskPriorityGet(snapshot->current)
     );
     printf(
         "Last switch : %s -> %s\n",
@@ -239,18 +239,18 @@ static void renderDashboard(const os_runtime_snapshot_t *snapshot, void *context
 
     printf(
         "[P1][%-13s] CarTask\nTrack       : |%s|\n\n",
-        os_TaskStateName(os_TaskGetState(demo->carTask)),
+        os_TaskStateName(eTaskGetState(demo->carTask)),
         track
     );
     printf(
         "[P1][%-13s] ComputeTask\nProgress    : [%s] %3u%%\n\n",
-        os_TaskStateName(os_TaskGetState(demo->computeTask)),
+        os_TaskStateName(eTaskGetState(demo->computeTask)),
         compute_bar,
         compute_progress
     );
     printf(
         "[P3][%-13s] EmergencyTask\nEmergency   : [%s] %s\n",
-        os_TaskStateName(os_TaskGetState(demo->emergencyTask)),
+        os_TaskStateName(eTaskGetState(demo->emergencyTask)),
         emergency_bar,
         atomic_load_explicit(&g_emergency_active, memory_order_relaxed)
             ? "HANDLING"
@@ -282,23 +282,11 @@ int main(int argc, char **argv)
     }
 
     os_Init();
-    if (os_TaskCreate(&demo.carTask, "CarTask", carTask, NULL, 1U,
-             demoAllocStack(),
-             DEMO_STACK_BYTES) !=
+    if ((((demo.carTask = xTaskCreate(carTask, "CarTask", DEMO_STACK_BYTES, NULL, 1U, demoAllocStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) !=
             OS_STATUS_OK ||
-        os_TaskCreate(&demo.computeTask, "ComputeTask", computeTask, NULL, 1U,
-             demoAllocStack(),
-             DEMO_STACK_BYTES) !=
+        (((demo.computeTask = xTaskCreate(computeTask, "ComputeTask", DEMO_STACK_BYTES, NULL, 1U, demoAllocStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) !=
             OS_STATUS_OK ||
-        os_TaskCreate(
-            &demo.emergencyTask,
-            "EmergencyTask",
-            emergencyTask,
-            NULL,
-            3U
-        ,
-             demoAllocStack(),
-             DEMO_STACK_BYTES) != OS_STATUS_OK) {
+        (((demo.emergencyTask = xTaskCreate(emergencyTask, "EmergencyTask", DEMO_STACK_BYTES, NULL, 3U, demoAllocStack())) != NULL) ? OS_STATUS_OK : osGetLastError()) != OS_STATUS_OK) {
         fprintf(stderr, "failed to create demo tasks\n");
         return 1;
     }
