@@ -372,7 +372,7 @@ os_task_t *os_WaitBlockCurrent(
     current->wait_deadline =
         (timeout_ticks == OS_WAIT_FOREVER)
             ? OS_WAIT_FOREVER
-            : (os_TickGet() + timeout_ticks);
+            : (xTaskGetTickCount() + timeout_ticks);
     current->wait_result = OS_STATUS_BAD_STATE;
     current->state = OS_TASK_BLOCKED_OBJECT;
 

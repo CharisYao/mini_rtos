@@ -42,20 +42,25 @@ extern "C" {
 #define OS_MIN_STACK_BYTES 64U          /**< 任务栈缓冲区最小字节数。 */
 #define OS_IDLE_STACK_BYTES 256U        /**< 自动 Idle 任务静态栈大小。 */
 
-/* 对应用隐藏内部字段的任务控制块类型。 */
+/* 对应用隐藏内部字段的控制块。句柄是指向它们的指针。 */
 typedef struct os_task os_task_t;
-/* 对应用隐藏内部字段的信号量类型。 */
 typedef struct os_sem os_sem_t;
-/* 对应用隐藏内部字段的消息队列类型。 */
 typedef struct os_queue os_queue_t;
-/* 对应用隐藏内部字段的互斥量类型。 */
 typedef struct os_mutex os_mutex_t;
+
+/* FreeRTOS 风格句柄。互斥量单独用 MutexHandle_t，因为它不是信号量。 */
+typedef os_task_t *TaskHandle_t;
+typedef os_sem_t *SemaphoreHandle_t;
+typedef os_queue_t *QueueHandle_t;
+typedef os_mutex_t *MutexHandle_t;
+typedef uint32_t TickType_t;
 
 /**
  * @brief 任务入口函数类型。
  * @param argument 创建任务时传入的用户参数。
  */
-typedef void (*os_task_entry_t)(void *argument);
+typedef void (*TaskFunction_t)(void *argument);
+typedef TaskFunction_t os_task_entry_t;
 
 /* 所有公开 API 共用的返回状态 */
 typedef enum {
@@ -110,36 +115,28 @@ typedef void (*os_observer_t)(const os_runtime_snapshot_t *snapshot, void *conte
 void os_Init(void);
 
 /**
- * @brief 从静态 TCB 池创建一个任务。
+ * @brief 从静态 TCB 池创建任务，成功返回句柄，失败返回 NULL。
  *
- * 调用方必须提供静态栈缓冲区。Win32 移植仍用宿主线程保存真实 CPU 现场，但会
- * 记录栈指针以便与 Cortex-M 等裸机移植共用创建路径。
- *
- * @param out_task 返回创建成功的 TCB 指针；失败时写入 NULL。
- * @param name 以 '\0' 结尾且长度小于 OS_TASK_NAME_MAX 的任务名。
- * @param entry 任务入口函数。
- * @param argument 传给任务入口的用户参数，可以为 NULL。
- * @param priority 固定基础优先级，必须大于 0 且小于 OS_PRIORITY_COUNT。
- * @param stack_memory 调用方提供的静态栈缓冲区。
- * @param stack_size 栈缓冲区字节数，必须 >= OS_MIN_STACK_BYTES。
- * @return OS_STATUS_OK 表示成功，否则返回参数、状态或容量错误。
+ * 调用方提供静态栈，单位是字节，不是 FreeRTOS 的字。失败原因见 osGetLastError()。
  */
-os_status_t os_TaskCreate(
-    os_task_t **out_task,
-    const char *name,
-    os_task_entry_t entry,
-    void *argument,
-    uint8_t priority,
-    void *stack_memory,
-    size_t stack_size
+TaskHandle_t xTaskCreate(
+    TaskFunction_t pxTaskCode,
+    const char *pcName,
+    uint32_t ulStackBytes,
+    void *pvParameters,
+    uint8_t uxPriority,
+    void *puxStackBuffer
 );
 
-/* 返回任务名称；task 为 NULL 时返回 NULL。 */
-const char *os_TaskGetName(const os_task_t *task);
-/* 返回任务当前状态；task 为 NULL 时返回 OS_TASK_UNUSED。 */
-os_task_state_t os_TaskGetState(const os_task_t *task);
-/* 返回任务有效优先级；task 为 NULL 时返回 OS_IDLE_PRIORITY。 */
-uint8_t os_TaskGetPriority(const os_task_t *task);
+/* 最近一次公开创建/操作 API 的状态。句柄 API 失败时用来区分原因。 */
+os_status_t osGetLastError(void);
+
+/* 返回任务名称；xTask 为 NULL 时返回 NULL。 */
+const char *pcTaskGetName(const os_task_t *xTask);
+/* 返回任务当前状态；xTask 为 NULL 时返回 OS_TASK_UNUSED。 */
+os_task_state_t eTaskGetState(const os_task_t *xTask);
+/* 返回任务有效优先级；xTask 为 NULL 时返回 OS_IDLE_PRIORITY。 */
+uint8_t uxTaskPriorityGet(const os_task_t *xTask);
 /* 返回便于显示的任务状态名称。 */
 const char *os_TaskStateName(os_task_state_t state);
 /* 返回便于显示的任务切换原因名称。 */
@@ -151,12 +148,13 @@ const char *os_SwitchReasonName(os_switch_reason_t reason);
  * @return OS_STATUS_OK 表示正常结束，宿主对象或运行不变量失败时返回错误。
  */
 os_status_t os_Start(uint32_t run_ticks);
-/* 当前任务保持 READY 并主动让出一次 CPU 使用机会。 */
-void os_Yield(void);
-/* 当前任务阻塞指定 tick；ticks 为 0 时等价于 os_Yield()。 */
-void os_Delay(uint32_t ticks);
-/* 返回当前系统 tick，支持在任务计算循环中无锁读取。 */
-uint32_t os_TickGet(void);
+/* 当前任务保持 READY 并主动让出一次 CPU。 */
+void vTaskYield(void);
+#define taskYIELD() vTaskYield()
+/* 当前任务阻塞指定 tick；0 等价于 taskYIELD()。 */
+void vTaskDelay(TickType_t xTicksToDelay);
+/* 返回当前系统 tick。 */
+TickType_t xTaskGetTickCount(void);
 /* 返回调度器是否仍在运行。 */
 bool os_IsRunning(void);
 
@@ -170,77 +168,48 @@ void os_SetObserver(os_observer_t observer, void *context);
 void os_GetRuntimeSnapshot(os_runtime_snapshot_t *out_snapshot);
 
 /**
- * @brief 从静态对象池创建计数信号量。
- * @param out_sem 返回创建成功的信号量指针；失败时写入 NULL。
- * @param initial_count 初始可用计数。
- * @param maximum_count 允许的最大计数，必须大于 0。
- * @return OS_STATUS_OK 表示成功，否则返回参数、状态或容量错误。
+ * @brief 从静态池创建计数信号量。参数顺序与 FreeRTOS 相同：先最大计数，再初始计数。
+ * @return 成功返回句柄，失败返回 NULL。原因见 osGetLastError()。
  */
-os_status_t os_SemInit(
-    os_sem_t **out_sem,
-    uint32_t initial_count,
-    uint32_t maximum_count
+SemaphoreHandle_t xSemaphoreCreateCounting(
+    uint32_t uxMaxCount,
+    uint32_t uxInitialCount
 );
 /**
  * @brief 获取一次信号量，计数为 0 时阻塞当前任务。
- * @param sem 目标信号量。
- * @param timeout_ticks 等待 tick 数；0 表示立即返回，OS_WAIT_FOREVER 表示永久等待。
- * @return OS_STATUS_OK、OS_STATUS_TIMEOUT 或参数/状态错误。
+ * @param xTicksToWait 0 表示不等待，OS_WAIT_FOREVER 表示永久等待。
  */
-os_status_t os_SemTake(os_sem_t *sem, uint32_t timeout_ticks);
-/* 释放一次信号量，并优先唤醒等待队列中的最高优先级任务。 */
-os_status_t os_SemGive(os_sem_t *sem);
-/**
- * @brief 在中断/tick 上下文释放信号量；不会阻塞，必要时置位 sched_pending。
- * @param sem 目标信号量。
- * @return OS_STATUS_OK 或参数/容量错误。
- */
-os_status_t os_SemGiveFromISR(os_sem_t *sem);
-/* 返回当前信号量计数；无效对象返回 0。 */
-uint32_t os_SemGetCount(const os_sem_t *sem);
+os_status_t xSemaphoreTake(SemaphoreHandle_t xSemaphore, TickType_t xTicksToWait);
+/* 释放一次信号量，并优先唤醒最高优先级等待者。 */
+os_status_t xSemaphoreGive(SemaphoreHandle_t xSemaphore);
+/* 在中断上下文释放信号量；不阻塞。 */
+os_status_t xSemaphoreGiveFromISR(SemaphoreHandle_t xSemaphore);
+/* 返回当前计数；无效句柄返回 0。 */
+uint32_t uxSemaphoreGetCount(SemaphoreHandle_t xSemaphore);
 
 /**
- * @brief 使用调用方提供的静态缓冲区创建固定容量消息队列。
- * @param out_queue 返回创建成功的队列指针；失败时写入 NULL。
- * @param buffer 保存消息的连续内存，生命周期必须覆盖队列运行期。
- * @param item_size 单条消息的字节数。
- * @param capacity 缓冲区可容纳的消息数量。
- * @return OS_STATUS_OK 表示成功，否则返回参数、状态或容量错误。
+ * @brief 用调用方缓冲区创建队列。uxQueueLength 是消息条数，uxItemSize 是每条字节数。
+ * @return 成功返回句柄，失败返回 NULL。
  */
-os_status_t os_QueueInit(
-    os_queue_t **out_queue,
-    void *buffer,
-    size_t item_size,
-    size_t capacity
+QueueHandle_t xQueueCreate(
+    uint32_t uxQueueLength,
+    uint32_t uxItemSize,
+    void *pucQueueStorage
 );
-/**
- * @brief 向队列发送一条消息，队列满时阻塞当前任务。
- * @param queue 目标消息队列。
- * @param item 指向一条 item_size 字节消息；阻塞期间该内存必须保持有效。
- * @param timeout_ticks 等待 tick 数；0 表示立即返回，OS_WAIT_FOREVER 表示永久等待。
- * @return OS_STATUS_OK、OS_STATUS_TIMEOUT 或参数/状态错误。
- */
-os_status_t os_QueueSend(
-    os_queue_t *queue,
-    const void *item,
-    uint32_t timeout_ticks
+os_status_t xQueueSend(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    TickType_t xTicksToWait
 );
-/**
- * @brief 从队列接收一条消息，队列空时阻塞当前任务。
- * @param queue 目标消息队列。
- * @param out_item 接收 item_size 字节消息的缓冲区。
- * @param timeout_ticks 等待 tick 数；0 表示立即返回，OS_WAIT_FOREVER 表示永久等待。
- * @return OS_STATUS_OK、OS_STATUS_TIMEOUT 或参数/状态错误。
- */
-os_status_t os_QueueReceive(
-    os_queue_t *queue,
-    void *out_item,
-    uint32_t timeout_ticks
+os_status_t xQueueReceive(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    TickType_t xTicksToWait
 );
-/* 返回队列当前消息数量；无效对象返回 0。 */
-size_t os_QueueGetCount(const os_queue_t *queue);
-/* 返回队列容量；无效对象返回 0。 */
-size_t os_QueueGetCapacity(const os_queue_t *queue);
+/* 返回队列里当前的消息条数。 */
+size_t uxQueueMessagesWaiting(QueueHandle_t xQueue);
+/* 返回队列容量（条数）。 */
+size_t uxQueueCapacity(QueueHandle_t xQueue);
 /**
  * @brief 按出队顺序复制队列内容，但不改变读写位置。
  * @param queue 目标消息队列。
@@ -254,17 +223,15 @@ size_t os_QueueSnapshot(
     size_t maximum_items
 );
 
-/* 从静态对象池创建一个非递归互斥量。 */
-os_status_t os_MutexInit(os_mutex_t **out_mutex);
+/* 从静态池创建一个非递归互斥量。失败返回 NULL。 */
+MutexHandle_t xMutexCreate(void);
 /**
- * @brief 获取互斥量，资源被占用时阻塞并触发优先级继承。
- * @param mutex 目标互斥量。
- * @param timeout_ticks 等待 tick 数；0 表示立即返回，OS_WAIT_FOREVER 表示永久等待。
+ * @brief 获取互斥量。被占用时阻塞，并做优先级继承。
  * @return OS_STATUS_OK、OS_STATUS_TIMEOUT 或参数/状态错误。
  */
-os_status_t os_MutexLock(os_mutex_t *mutex, uint32_t timeout_ticks);
-/* 由所有者释放互斥量；非所有者调用返回 OS_STATUS_NOT_OWNER。 */
-os_status_t os_MutexUnlock(os_mutex_t *mutex);
+os_status_t xMutexLock(MutexHandle_t xMutex, TickType_t xTicksToWait);
+/* 由所有者释放互斥量；非所有者返回 OS_STATUS_NOT_OWNER。 */
+os_status_t xMutexUnlock(MutexHandle_t xMutex);
 
 #ifdef __cplusplus
 }

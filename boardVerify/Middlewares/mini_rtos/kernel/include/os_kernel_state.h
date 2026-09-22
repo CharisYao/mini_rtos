@@ -25,7 +25,7 @@ typedef struct {
     os_list_t ready[OS_PRIORITY_COUNT];        /* 每个优先级一条 FIFO 就绪队列。 */
     os_list_t delayed;                         /* 等待 wake_tick 的任务集合。 */
     uint8_t ready_bitmap;                      /* 非空就绪队列的优先级位图。 */
-    /* ARMCC 5 无 stdatomic.h。Cortex-M3 对齐 32 位读写本身原子，任务可读 tick。 */
+    /* ARMCC 5 无 stdatomic.h。Cortex-M 对齐 32 位读写本身原子，任务可读 tick。 */
     volatile uint32_t tick;
     os_task_t *current;                        /* 当前 RUNNING 任务。 */
     os_task_t *last_from;                      /* 最近一次切换的来源任务。 */
@@ -38,5 +38,8 @@ typedef struct {
 
 /* 全局内核实例，由 kernel/src/os_task.c 定义。 */
 extern os_kernel_t g_os_kernel;
+
+/* 记录最近一次公开 API 的状态，供 osGetLastError() 读取。 */
+void os_SetLastError(os_status_t status);
 
 #endif

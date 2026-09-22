@@ -37,7 +37,7 @@ static void os_IdleTaskEntry(void *argument)
         if (!os_port_is_running()) {
             return;
         }
-        os_Yield();
+        vTaskYield();
     }
 }
 
@@ -167,26 +167,29 @@ void os_Init(void)
     g_os_kernel.initialized = true;
 }
 
-os_status_t os_TaskCreate(
-    os_task_t **out_task,
-    const char *name,
-    os_task_entry_t entry,
-    void *argument,
-    uint8_t priority,
-    void *stack_memory,
-    size_t stack_size
+TaskHandle_t xTaskCreate(
+    TaskFunction_t pxTaskCode,
+    const char *pcName,
+    uint32_t ulStackBytes,
+    void *pvParameters,
+    uint8_t uxPriority,
+    void *puxStackBuffer
 )
 {
-    return os_TaskCreateInternal(
-        out_task,
-        name,
-        entry,
-        argument,
-        priority,
-        stack_memory,
-        stack_size,
+    os_task_t *task = NULL;
+    os_status_t status = os_TaskCreateInternal(
+        &task,
+        pcName,
+        pxTaskCode,
+        pvParameters,
+        uxPriority,
+        puxStackBuffer,
+        ulStackBytes,
         false
     );
+
+    os_SetLastError(status);
+    return (status == OS_STATUS_OK) ? task : NULL;
 }
 
 os_status_t os_EnsureIdleTask(void)
@@ -212,19 +215,19 @@ bool os_TaskIsIdle(const os_task_t *task)
     return (task != NULL) && (task->base_priority == OS_IDLE_PRIORITY);
 }
 
-const char *os_TaskGetName(const os_task_t *task)
+const char *pcTaskGetName(const os_task_t *xTask)
 {
-    return (task != NULL) ? task->name : NULL;
+    return (xTask != NULL) ? xTask->name : NULL;
 }
 
-os_task_state_t os_TaskGetState(const os_task_t *task)
+os_task_state_t eTaskGetState(const os_task_t *xTask)
 {
-    return (task != NULL) ? task->state : OS_TASK_UNUSED;
+    return (xTask != NULL) ? xTask->state : OS_TASK_UNUSED;
 }
 
-uint8_t os_TaskGetPriority(const os_task_t *task)
+uint8_t uxTaskPriorityGet(const os_task_t *xTask)
 {
-    return (task != NULL) ? task->effective_priority : OS_IDLE_PRIORITY;
+    return (xTask != NULL) ? xTask->effective_priority : OS_IDLE_PRIORITY;
 }
 
 const char *os_TaskStateName(os_task_state_t state)

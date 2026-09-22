@@ -48,22 +48,18 @@ void os_SemKernelReset(void)
  * @param maximum_count 允许的最大计数，必须大于 0。
  * @return 初始化结果。
  */
-os_status_t os_SemInit(
-    os_sem_t **out_sem,
-    uint32_t initial_count,
-    uint32_t maximum_count
+SemaphoreHandle_t xSemaphoreCreateCounting(
+    uint32_t uxMaxCount,
+    uint32_t uxInitialCount
 )
 {
-    if (out_sem == NULL) {
-        return OS_STATUS_INVALID_ARGUMENT;
-    }
-    *out_sem = NULL;
-
     if (!g_os_kernel.initialized || g_os_kernel.started) {
-        return OS_STATUS_BAD_STATE;
+        os_SetLastError(OS_STATUS_BAD_STATE);
+        return NULL;
     }
-    if ((maximum_count == 0U) || (initial_count > maximum_count)) {
-        return OS_STATUS_INVALID_ARGUMENT;
+    if ((uxMaxCount == 0U) || (uxInitialCount > uxMaxCount)) {
+        os_SetLastError(OS_STATUS_INVALID_ARGUMENT);
+        return NULL;
     }
 
     for (size_t index = 0U; index < OS_MAX_SEMAPHORES; index++) {
@@ -71,21 +67,22 @@ os_status_t os_SemInit(
 
         if (!sem->used) {
             sem->used = true;
-            sem->count = initial_count;
-            sem->maximum_count = maximum_count;
+            sem->count = uxInitialCount;
+            sem->maximum_count = uxMaxCount;
             os_ListInit(&sem->waiters);
-            *out_sem = sem;
-            return OS_STATUS_OK;
+            os_SetLastError(OS_STATUS_OK);
+            return sem;
         }
     }
 
-    return OS_STATUS_LIMIT_REACHED;
+    os_SetLastError(OS_STATUS_LIMIT_REACHED);
+    return NULL;
 }
 
 /* 返回当前可用计数，无效对象统一返回 0。 */
-uint32_t os_SemGetCount(const os_sem_t *sem)
+uint32_t uxSemaphoreGetCount(SemaphoreHandle_t xSemaphore)
 {
-    return os_SemIsValid(sem) ? sem->count : 0U;
+    return os_SemIsValid(xSemaphore) ? xSemaphore->count : 0U;
 }
 
 /**

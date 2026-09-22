@@ -45,15 +45,11 @@ void os_MutexKernelReset(void)
  * @param out_mutex 返回创建成功的对象；失败时保持为 NULL。
  * @return 初始化结果。
  */
-os_status_t os_MutexInit(os_mutex_t **out_mutex)
+MutexHandle_t xMutexCreate(void)
 {
-    if (out_mutex == NULL) {
-        return OS_STATUS_INVALID_ARGUMENT;
-    }
-    *out_mutex = NULL;
-
     if (!g_os_kernel.initialized || g_os_kernel.started) {
-        return OS_STATUS_BAD_STATE;
+        os_SetLastError(OS_STATUS_BAD_STATE);
+        return NULL;
     }
 
     for (size_t index = 0U; index < OS_MAX_MUTEXES; index++) {
@@ -63,12 +59,13 @@ os_status_t os_MutexInit(os_mutex_t **out_mutex)
             mutex->used = true;
             mutex->owner = NULL;
             os_ListInit(&mutex->waiters);
-            *out_mutex = mutex;
-            return OS_STATUS_OK;
+            os_SetLastError(OS_STATUS_OK);
+            return mutex;
         }
     }
 
-    return OS_STATUS_LIMIT_REACHED;
+    os_SetLastError(OS_STATUS_LIMIT_REACHED);
+    return NULL;
 }
 
 /**

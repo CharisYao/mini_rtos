@@ -33,9 +33,9 @@ target_include_directories(mini_rtos_core
 
 target_compile_options(mini_rtos_core PRIVATE -Wall -Wextra)
 
+# PendSV/SVC live in os_port_cortex_m_asm_keil.s (Keil armasm only).
 add_library(mini_rtos_port_cortex_m STATIC
     ${MINI_RTOS_MW}/port/cortex-m/os_port_cortex_m.c
-    ${MINI_RTOS_MW}/port/cortex-m/os_port_cortex_m_asm.S
 )
 
 target_include_directories(mini_rtos_port_cortex_m
@@ -79,9 +79,13 @@ set(BOARD_APP_SRC
     Core/Src/stm32f1xx_hal_msp.c
     Core/Src/stm32f1xx_hal_timebase_tim.c
     Core/Src/system_stm32f1xx.c
-    Core/Startup/startup_stm32f103xb.s
     syscalls.c
 )
+
+# Firmware image is MDK-ARM/boardVerify.uvprojx.
+# Keil startup is MDK-ARM/startup_stm32f103xb.s. Do not expect this file to link an ELF.
+message(STATUS "boardVerify image is built with Keil MDK, not this CMake file")
+return()
 
 add_executable(boardVerify.elf
     ${BOARD_APP_SRC}

@@ -28,7 +28,7 @@ static bool os_TickReached(uint32_t now, uint32_t target)
 }
 
 /* 读取 tick。任务可在不进入内核临界区时查询时间。 */
-uint32_t os_TickGet(void)
+TickType_t xTaskGetTickCount(void)
 {
     return g_os_kernel.tick;
 }
@@ -53,7 +53,7 @@ os_task_t *os_TimeDelayCurrent(uint32_t ticks)
         ticks = OS_MAX_DELAY_TICKS;
     }
 
-    current->wake_tick = os_TickGet() + ticks;
+    current->wake_tick = xTaskGetTickCount() + ticks;
     current->state = OS_TASK_BLOCKED_DELAY;
     os_ListPushBack(&g_os_kernel.delayed, &current->schedule_node);
     return os_SchedCurrentBlocked(OS_SWITCH_BLOCKED);

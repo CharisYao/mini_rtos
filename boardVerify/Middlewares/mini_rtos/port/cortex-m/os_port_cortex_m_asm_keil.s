@@ -1,6 +1,5 @@
 ; os_port_cortex_m_asm_keil.s — PendSV / SVC / first-task start (Cortex-M3/M4, no FPU)
-; ARM Assembler (armasm / armclang -masm=armasm) for Keil MDK.
-; GNU twin: os_port_cortex_m_asm.S (used by CMake + arm-none-eabi-gcc).
+; ARM Assembler (armasm) for Keil MDK. This board project does not ship the GNU copy.
 
                 AREA    |.text|, CODE, READONLY, ALIGN=2
                 THUMB

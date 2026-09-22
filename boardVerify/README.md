@@ -114,7 +114,7 @@ RUNNING when the status snapshot was taken (often `status` or `worker`).
 | Piece | Role |
 | --- | --- |
 | CubeMX `Core/` + `Drivers/` | HAL, CMSIS device, TIM4 tick, USART1, GPIO LEDs |
-| `Core/Startup/startup_stm32f103xb.s` | GNU ARM startup / vector table |
+| `MDK-ARM/startup_stm32f103xb.s` | Keil startup / vector table |
 | `STM32F103XB_FLASH.ld` | 64K FLASH / 20K RAM (F103C8) |
 | `App/mini_rtos.c` | Phase C smoke entry (`mini_rtos_app_start`) |
 | `Middlewares/mini_rtos` | Vendored `include/` + `kernel/` + `port/cortex-m` |
@@ -153,4 +153,5 @@ Include paths: `../App`, `../Middlewares/mini_rtos/include`,
 `../Middlewares/mini_rtos/kernel/include`, `../Middlewares/mini_rtos/port/cortex-m`
 (plus HAL/CMSIS).
 
-CMake/`arm-none-eabi-gcc` uses GNU `os_port_cortex_m_asm.S` instead of the Keil `.s`.
+Only those two assembly files are in this tree: the Keil startup file and
+`os_port_cortex_m_asm_keil.s`. The GNU copies are not vendored here.
