@@ -22,12 +22,12 @@
 #define SMOKE_STACK_BYTES 512U
 #define QUEUE_CAPACITY    4U
 
-/* OS_TICK_MS is 10 → 100 ticks ≈ 1 s, 50 ≈ 0.5 s, 10 ≈ 100 ms. */
-#define HEARTBEAT_PERIOD_TICKS 50U   /* LED1 toggle ~1 Hz (active-low) */
-#define WORKER_BUSY_TICKS      5U    /* high-prio busy window */
-#define WORKER_IDLE_TICKS      20U
-#define PRODUCER_PERIOD_TICKS  30U
-#define STATUS_PERIOD_TICKS    100U  /* UART ~1 Hz */
+/* OS_TICK_MS is 1. These counts keep the previous wall-clock delays. */
+#define HEARTBEAT_PERIOD_TICKS 500U  /* LED1 toggle ~500 ms */
+#define WORKER_BUSY_TICKS      50U   /* high-prio busy window, 50 ms */
+#define WORKER_IDLE_TICKS      200U  /* 200 ms */
+#define PRODUCER_PERIOD_TICKS  300U  /* 300 ms */
+#define STATUS_PERIOD_TICKS    1000U /* UART ~1 s */
 
 /* User priorities: 1 lowest, 7 highest. Idle is 0 and created by the kernel. */
 #define PRIO_HEARTBEAT 1U
@@ -164,7 +164,7 @@ static void task_consumer(void *argument)
         g_cnt_consumed++;
         g_cnt_sync++;
         LED_ON(LED3_GPIO_Port, LED3_Pin);
-        vTaskDelay(5U); /* short visible pulse */
+        vTaskDelay(50U); /* short visible pulse, 50 ms */
         LED_OFF(LED3_GPIO_Port, LED3_Pin);
         (void)item;
       }

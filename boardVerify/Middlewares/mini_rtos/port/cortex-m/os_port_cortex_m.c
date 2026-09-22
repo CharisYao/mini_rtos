@@ -217,7 +217,6 @@ os_status_t os_port_task_request(
 )
 {
     os_task_t *current = g_os_kernel.current;
-    os_status_t result;
 
     if ((current == NULL) || (current->state != OS_TASK_RUNNING)) {
         return OS_STATUS_BAD_STATE;
@@ -259,13 +258,16 @@ os_status_t os_port_task_request(
         return OS_STATUS_INVALID_ARGUMENT;
     }
 
-    result = current->wait_result;
+    /*
+     * If this task blocked, PendSV runs before we continue. wait_result is
+     * written by the waker while we are asleep, so read it only after resume.
+     */
     if (current->state != OS_TASK_RUNNING) {
         os_port_pend_context_switch();
     }
 
     os_port_exit_critical();
-    return result;
+    return current->wait_result;
 }
 
 /* ---- SysTick / observer ------------------------------------------------- */
