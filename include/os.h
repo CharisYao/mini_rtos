@@ -31,8 +31,8 @@ extern "C" {
 #define OS_PRIORITY_COUNT 8U            /**< 优先级数量，取值范围为 0～7。 */
 #define OS_IDLE_PRIORITY 0U             /**< Idle 任务优先级；用户任务不可使用。 */
 #define OS_TASK_NAME_MAX 24U            /**< 任务名缓冲区大小，包含结尾 '\0'。 */
-#define OS_TICK_MS 10U                  /**< 一个系统 tick 的标称时长，单位 ms。 */
-#define OS_TIME_SLICE_TICKS 20U         /**< 同优先级任务的时间片长度。 */
+#define OS_TICK_MS 1U                   /**< 一个系统 tick 的标称时长，单位 ms。 */
+#define OS_TIME_SLICE_TICKS 200U        /**< 同优先级时间片，200 tick = 200 ms。 */
 #define OS_OBSERVER_PERIOD_TICKS 10U    /**< 控制台观察器的刷新周期。 */
 #define OS_MAX_DELAY_TICKS 0x7FFFFFFFU  /**< 可安全进行回绕比较的最大有限等待。 */
 #define OS_WAIT_FOREVER UINT32_MAX      /**< 永久等待，不设置超时截止 tick。 */
