@@ -284,12 +284,16 @@ void os_port_enable_systick(void)
                        OS_PORT_SYST_CSR_ENABLE;
 }
 
-static void os_port_configure_pendsv_priority(void)
+static void os_port_configure_kernel_priorities(void)
 {
-    /* SHPR3 bits [23:16] = PendSV priority; lowest = 0xFF. */
+    /* SHPR3: [23:16] PendSV, [31:24] SysTick. Both stay at the lowest
+     * priority so device IRQs preempt the tick and the context switch.
+     * Reset leaves SysTick at 0, which is the highest priority. */
     uint32_t shpr3 = OS_PORT_SHPR3;
-    shpr3 &= ~(0xFFu << 16);
-    shpr3 |= ((uint32_t)OS_PORT_CORTEX_M_PENDSV_PRIORITY << 16);
+    const uint32_t lowest = (uint32_t)OS_PORT_CORTEX_M_PENDSV_PRIORITY;
+
+    shpr3 &= ~((0xFFu << 16) | (0xFFu << 24));
+    shpr3 |= (lowest << 16) | (lowest << 24);
     OS_PORT_SHPR3 = shpr3;
 }
 
@@ -312,7 +316,7 @@ os_status_t os_port_start_scheduler(uint32_t run_ticks)
     g_port_running = true;
 
     os_port_disable_irq();
-    os_port_configure_pendsv_priority();
+    os_port_configure_kernel_priorities();
     os_port_prepare_systick();
 
     /* Does not return: SVC starts the first task and enables SysTick. */

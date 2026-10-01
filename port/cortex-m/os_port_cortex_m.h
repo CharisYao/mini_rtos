@@ -28,7 +28,7 @@ extern "C" {
 #define OS_PORT_CORTEX_M_DEFAULT_CORE_CLOCK_HZ 72000000u
 #endif
 
-/* Lowest configurable exception priority byte for PendSV. */
+/* Lowest priority byte for PendSV and SysTick (SHPR3). */
 #ifndef OS_PORT_CORTEX_M_PENDSV_PRIORITY
 #define OS_PORT_CORTEX_M_PENDSV_PRIORITY 0xFFu
 #endif
