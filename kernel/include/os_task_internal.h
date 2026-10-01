@@ -44,7 +44,9 @@ struct os_task {
     os_list_t *wait_list;              /* 当前所在的对象等待队列。 */
     uint32_t wait_deadline;            /* 对象等待的绝对超时 tick。 */
     os_status_t wait_result;           /* 任务恢复后由公开 API 返回的结果。 */
-    os_list_node_t schedule_node;      /* 挂入一条调度链表的唯一节点。 */
+    os_list_node_t schedule_node;      /* 挂入就绪队列或内核对象等待队列的节点。 */
+    os_list_node_t delay_node;         /* 挂入延时/超时有序链表的节点。 */
+    os_list_t *delay_list;             /* 当前所在的延时链表 (px_delayed 或 px_overflow_delayed)。 */
 };
 
 /* 若尚不存在则创建优先级 0 的自动 Idle 任务。 */
