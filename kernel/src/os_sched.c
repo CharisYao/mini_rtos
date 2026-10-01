@@ -377,6 +377,14 @@ os_task_t *os_WaitBlockCurrent(
     current->state = OS_TASK_BLOCKED_OBJECT;
 
     os_WaitInsertByPriority(wait_list, current);
+
+    if (timeout_ticks != OS_WAIT_FOREVER) {
+        os_TimeDelayListInsert(current, current->wait_deadline);
+    } else {
+        current->delay_list = NULL;
+        current->delay_node.linked = false;
+    }
+
     return os_SchedCurrentBlocked(OS_SWITCH_BLOCKED);
 }
 
@@ -404,6 +412,9 @@ void os_WaitMakeReady(os_task_t *task, os_status_t result)
         task->schedule_node.linked) {
         return;
     }
+
+    /* 提前唤醒时，双向摘链：从延时/超时链表中拔出 */
+    os_TimeDelayListRemove(task);
 
     task->wait_kind = OS_WAIT_NONE;
     task->wait_object = NULL;
@@ -485,7 +496,10 @@ void os_KernelStopAll(void)
     for (size_t priority = 0U; priority < OS_PRIORITY_COUNT; priority++) {
         os_ListInit(&g_os_kernel.ready[priority]);
     }
-    os_ListInit(&g_os_kernel.delayed);
+    os_ListInit(&g_os_kernel.delayed_lists[0]);
+    os_ListInit(&g_os_kernel.delayed_lists[1]);
+    g_os_kernel.px_delayed = &g_os_kernel.delayed_lists[0];
+    g_os_kernel.px_overflow_delayed = &g_os_kernel.delayed_lists[1];
 
     g_os_kernel.ready_bitmap = 0U;
     g_os_kernel.current = NULL;
@@ -504,6 +518,10 @@ void os_KernelStopAll(void)
         task->schedule_node.previous = NULL;
         task->schedule_node.next = NULL;
         task->schedule_node.linked = false;
+        task->delay_node.previous = NULL;
+        task->delay_node.next = NULL;
+        task->delay_node.linked = false;
+        task->delay_list = NULL;
     }
 }
 
@@ -567,11 +585,19 @@ bool os_KernelValidate(void)
         return false;
     }
 
-    /* 第二遍验证延时队列的双向关系和 BLOCKED_DELAY 状态。 */
-    {
-        const os_list_node_t *node = g_os_kernel.delayed.head;
+    /* 第二遍验证有序双延时链表的双向关系、归属及排序。 */
+    if ((g_os_kernel.px_delayed == NULL) || (g_os_kernel.px_overflow_delayed == NULL) ||
+        (g_os_kernel.px_delayed == g_os_kernel.px_overflow_delayed)) {
+        return false;
+    }
+
+    for (size_t d_idx = 0U; d_idx < 2U; d_idx++) {
+        const os_list_t *list = &g_os_kernel.delayed_lists[d_idx];
+        const os_list_node_t *node = list->head;
         const os_list_node_t *previous = NULL;
         size_t count = 0U;
+        uint32_t last_target = 0U;
+        bool has_last = false;
 
         while (node != NULL) {
             const os_task_t *task = node->owner;
@@ -582,10 +608,21 @@ bool os_KernelValidate(void)
             if ((task == NULL) || (task->id >= OS_MAX_TASKS)) {
                 return false;
             }
-            if ((task != &g_os_kernel.tasks[task->id]) ||
-                (task->state != OS_TASK_BLOCKED_DELAY)) {
+            if (task != &g_os_kernel.tasks[task->id]) {
                 return false;
             }
+            if ((task->state != OS_TASK_BLOCKED_DELAY) &&
+                (task->state != OS_TASK_BLOCKED_OBJECT)) {
+                return false;
+            }
+            if (task->delay_list != list) {
+                return false;
+            }
+            if (has_last && (task->wake_tick < last_target)) {
+                return false;
+            }
+            last_target = task->wake_tick;
+            has_last = true;
 
             delay_membership[task->id]++;
             previous = node;
@@ -593,7 +630,7 @@ bool os_KernelValidate(void)
             count++;
         }
 
-        if ((count != g_os_kernel.delayed.size) || (previous != g_os_kernel.delayed.tail)) {
+        if ((count != list->size) || (previous != list->tail)) {
             return false;
         }
     }
@@ -602,12 +639,14 @@ bool os_KernelValidate(void)
     for (size_t index = 0U; index < OS_MAX_TASKS; index++) {
         const os_task_t *task = &g_os_kernel.tasks[index];
 
-        if ((task->id != index) || (task->schedule_node.owner != task)) {
+        if ((task->id != index) || (task->schedule_node.owner != task) ||
+            (task->delay_node.owner != task)) {
             return false;
         }
 
         if (task->state == OS_TASK_UNUSED) {
-            if ((ready_membership[index] != 0U) || (delay_membership[index] != 0U)) {
+            if ((ready_membership[index] != 0U) || (delay_membership[index] != 0U) ||
+                task->schedule_node.linked || task->delay_node.linked) {
                 return false;
             }
             continue;
@@ -631,7 +670,8 @@ bool os_KernelValidate(void)
 
         switch (task->state) {
         case OS_TASK_READY:
-            if ((ready_membership[index] != 1U) || (delay_membership[index] != 0U)) {
+            if ((ready_membership[index] != 1U) || (delay_membership[index] != 0U) ||
+                task->delay_node.linked) {
                 return false;
             }
             if ((task->wait_kind != OS_WAIT_NONE) || (task->wait_list != NULL)) {
@@ -639,7 +679,8 @@ bool os_KernelValidate(void)
             }
             break;
         case OS_TASK_BLOCKED_DELAY:
-            if ((ready_membership[index] != 0U) || (delay_membership[index] != 1U)) {
+            if ((ready_membership[index] != 0U) || (delay_membership[index] != 1U) ||
+                !task->delay_node.linked || task->schedule_node.linked) {
                 return false;
             }
             break;
@@ -648,7 +689,7 @@ bool os_KernelValidate(void)
             if ((g_os_kernel.current != task) ||
                 (ready_membership[index] != 0U) ||
                 (delay_membership[index] != 0U) ||
-                task->schedule_node.linked) {
+                task->schedule_node.linked || task->delay_node.linked) {
                 return false;
             }
             if ((task->wait_kind != OS_WAIT_NONE) || (task->wait_list != NULL)) {
@@ -656,16 +697,27 @@ bool os_KernelValidate(void)
             }
             break;
         case OS_TASK_BLOCKED_OBJECT:
-            if ((ready_membership[index] != 0U) || (delay_membership[index] != 0U) ||
+            if ((ready_membership[index] != 0U) ||
                 !task->schedule_node.linked || (task->wait_kind == OS_WAIT_NONE) ||
                 (task->wait_list == NULL) ||
                 !os_ListContains(task->wait_list, &task->schedule_node)) {
                 return false;
             }
+            if (task->delay_node.linked) {
+                if ((delay_membership[index] != 1U) || (task->delay_list == NULL) ||
+                    (task->wake_tick != task->wait_deadline)) {
+                    return false;
+                }
+            } else {
+                if ((delay_membership[index] != 0U) || (task->delay_list != NULL) ||
+                    (task->wait_deadline != OS_WAIT_FOREVER)) {
+                    return false;
+                }
+            }
             break;
         case OS_TASK_TERMINATED:
             if ((ready_membership[index] != 0U) || (delay_membership[index] != 0U) ||
-                task->schedule_node.linked) {
+                task->schedule_node.linked || task->delay_node.linked) {
                 return false;
             }
             break;

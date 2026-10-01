@@ -25,7 +25,9 @@ typedef struct {
     os_task_t tasks[OS_MAX_TASKS];             /* 静态 TCB 池。 */
     size_t task_count;                         /* 已创建任务数量。 */
     os_list_t ready[OS_PRIORITY_COUNT];        /* 每个优先级一条 FIFO 就绪队列。 */
-    os_list_t delayed;                         /* 等待 wake_tick 的任务集合。 */
+    os_list_t delayed_lists[2];                /* 延时链表池：[0] 为当前周期，[1] 为溢出周期。 */
+    os_list_t *px_delayed;                     /* 指向当前周期的有序延时链表。 */
+    os_list_t *px_overflow_delayed;            /* 指向溢出周期的有序延时链表。 */
     uint8_t ready_bitmap;                      /* 非空就绪队列的优先级位图。 */
     atomic_uint_least32_t tick;                /* 可由任务安全读取的系统 tick。 */
     os_task_t *current;                        /* 当前 RUNNING 任务。 */

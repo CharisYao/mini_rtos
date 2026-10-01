@@ -12,6 +12,10 @@
 
 /* 返回当前系统 tick。 */
 uint32_t os_TickGet(void);
+/* 将任务按唤醒时间升序插入对应延时链表（当前或溢出）。 */
+void os_TimeDelayListInsert(os_task_t *task, uint32_t target);
+/* 将任务从其当前所在的延时链表中移除。 */
+void os_TimeDelayListRemove(os_task_t *task);
 /* 将当前任务加入延时队列并选择下一任务。 */
 os_task_t *os_TimeDelayCurrent(uint32_t ticks);
 /* 推进一个系统 tick，处理唤醒、超时和时间片轮转。 */

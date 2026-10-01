@@ -130,6 +130,11 @@ static os_status_t os_TaskCreateInternal(
     task->wait_list = NULL;
     task->wait_deadline = 0U;
     task->wait_result = OS_STATUS_BAD_STATE;
+    task->delay_list = NULL;
+    task->delay_node.linked = false;
+    task->delay_node.owner = task;
+    task->delay_node.previous = NULL;
+    task->delay_node.next = NULL;
 
     os_ReadyEnqueue(task);
     g_os_kernel.task_count++;
@@ -150,7 +155,10 @@ void os_Init(void)
     for (index = 0U; index < OS_PRIORITY_COUNT; index++) {
         os_ListInit(&g_os_kernel.ready[index]);
     }
-    os_ListInit(&g_os_kernel.delayed);
+    os_ListInit(&g_os_kernel.delayed_lists[0]);
+    os_ListInit(&g_os_kernel.delayed_lists[1]);
+    g_os_kernel.px_delayed = &g_os_kernel.delayed_lists[0];
+    g_os_kernel.px_overflow_delayed = &g_os_kernel.delayed_lists[1];
     atomic_init(&g_os_kernel.tick, 0U);
     os_SemKernelReset();
     os_QueueKernelReset();
@@ -162,6 +170,7 @@ void os_Init(void)
         task->id = (uint8_t)index;
         task->state = OS_TASK_UNUSED;
         task->schedule_node.owner = task;
+        task->delay_node.owner = task;
     }
 
     g_os_kernel.initialized = true;

@@ -212,12 +212,11 @@ static bool testHigherPriorityReadyTaskPreempts(void)
 
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
-    high->wake_tick = 100U;
-    os_ListPushBack(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListInsert(high, 100U);
     CHECK(os_SchedStart() == low);
     CHECK(os_KernelValidate());
 
-    os_ListRemove(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListRemove(high);
     high->state = OS_TASK_READY;
     os_ReadyEnqueue(high);
     CHECK(os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false) == high);
@@ -497,6 +496,18 @@ static bool testSemaphoreTimeoutAndCountLimit(void)
     CHECK(task->wait_result == OS_STATUS_LIMIT_REACHED);
     CHECK(os_SemGetCount(sem) == 1U);
     CHECK(os_KernelValidate());
+
+    /* 验证有限超时截止时间刚好等于 UINT32_MAX (OS_WAIT_FOREVER) 时的不变式校验与唤醒 */
+    os_SemTakeCurrent(sem, 0U);
+    atomic_store_explicit(&g_os_kernel.tick, UINT32_MAX - 1U, memory_order_relaxed);
+    os_SemTakeCurrent(sem, 1U);
+    CHECK(task->state == OS_TASK_BLOCKED_OBJECT);
+    CHECK(task->wait_deadline == UINT32_MAX);
+    CHECK(task->delay_node.linked);
+    CHECK(os_KernelValidate());
+    CHECK(os_TimeTick() == task);
+    CHECK(task->wait_result == OS_STATUS_TIMEOUT);
+    CHECK(os_KernelValidate());
     return true;
 }
 
@@ -722,21 +733,19 @@ static bool testMutexPriorityInheritancePreventsInversion(void)
 
     CHECK(os_ReadyRemove(medium));
     medium->state = OS_TASK_BLOCKED_DELAY;
-    medium->wake_tick = 1000U;
-    os_ListPushBack(&g_os_kernel.delayed, &medium->schedule_node);
+    os_TimeDelayListInsert(medium, 1000U);
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
-    high->wake_tick = 1000U;
-    os_ListPushBack(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListInsert(high, 1000U);
 
     CHECK(os_SchedStart() == low);
     os_MutexLockCurrent(mutex, OS_WAIT_FOREVER);
     CHECK(mutex->owner == low);
 
-    os_ListRemove(&g_os_kernel.delayed, &medium->schedule_node);
+    os_TimeDelayListRemove(medium);
     medium->state = OS_TASK_READY;
     os_ReadyEnqueue(medium);
-    os_ListRemove(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListRemove(high);
     high->state = OS_TASK_READY;
     os_ReadyEnqueue(high);
     CHECK(os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false) == high);
@@ -780,12 +789,11 @@ static bool testMutexTimeoutRestoresOwnerPriority(void)
 
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
-    high->wake_tick = 1000U;
-    os_ListPushBack(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListInsert(high, 1000U);
     CHECK(os_SchedStart() == low);
     os_MutexLockCurrent(mutex, OS_WAIT_FOREVER);
 
-    os_ListRemove(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListRemove(high);
     high->state = OS_TASK_READY;
     os_ReadyEnqueue(high);
     CHECK(os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false) == high);
@@ -844,12 +852,11 @@ static bool testTaskExitTransfersOwnedMutex(void)
 
     CHECK(os_ReadyRemove(high));
     high->state = OS_TASK_BLOCKED_DELAY;
-    high->wake_tick = 1000U;
-    os_ListPushBack(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListInsert(high, 1000U);
     CHECK(os_SchedStart() == low);
     os_MutexLockCurrent(mutex, OS_WAIT_FOREVER);
 
-    os_ListRemove(&g_os_kernel.delayed, &high->schedule_node);
+    os_TimeDelayListRemove(high);
     high->state = OS_TASK_READY;
     os_ReadyEnqueue(high);
     CHECK(os_SchedSchedule(OS_SWITCH_HIGHER_PRIORITY_WAKEUP, false) == high);
